@@ -1,8 +1,14 @@
-import LoginPage from '../components/LoginPage';
+import { redirect } from 'next/navigation';
 
 export default function Home() {
-  return <LoginPage />;
+  redirect('/login');
 }
+
+// import LoginPage from '../components/LoginPage';
+
+// export default function Home() {
+//   return <LoginPage />;
+// }
 
 
 // export default function Home() {
