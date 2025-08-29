@@ -13,17 +13,14 @@ function toEmbed(url) {
   if (!url) return '';
   try {
     const u = new URL(url);
-    // youtube watch → embed
     if ((u.hostname.includes('youtube.com') || u.hostname.includes('youtu.be'))) {
-      // youtu.be/<id>
       if (u.hostname === 'youtu.be' && u.pathname.length > 1) {
         return `https://www.youtube.com/embed/${u.pathname.slice(1)}`;
       }
-      // youtube.com/watch?v=<id>
       const id = u.searchParams.get('v');
       if (id) return `https://www.youtube.com/embed/${id}`;
     }
-    return url; // non-youtube or already embed
+    return url; 
   } catch {
     return url;
   }

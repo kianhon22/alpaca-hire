@@ -114,7 +114,6 @@ function ManageSteps({ role }) {
     setSteps(prev => prev.filter(s => s.id !== stepId));
   }
 
-  // “rename” by copy + delete
   async function renameStep(oldId, newId, payload) {
     if (oldId === newId) return saveStep(payload);
     if (!newId) {
@@ -507,8 +506,10 @@ export default function EmployeeOnboarding() {
           deptSteps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         }
 
-        const merged = [...baseSteps, ...deptSteps].sort((a, b) => (a.order || 0) - (b.order || 0));
-        setSteps(merged);
+        const taggedBase = baseSteps.map(s => ({ ...s, _scope: 'base' }));
+        const taggedDept = deptSteps.map(s => ({ ...s, _scope: 'dept' }));
+
+        setSteps([...taggedBase, ...taggedDept]);
 
         const tasksSnap = await getDocs(collection(db, 'userOnboarding', user.uid, 'tasks'));
         const s = new Set();
@@ -531,20 +532,22 @@ export default function EmployeeOnboarding() {
   return (
     <div className="fixed inset-0 top-[64px] w-screen min-h-[calc(100vh-64px)] overflow-y-auto">
       {/* HERO */}
-      <section
-        className="relative w-full min-h-[60vh] flex items-center justify-center bg-cover bg-center"
-        style={{ backgroundImage: "url('/onboarding-bg.jpg')" }}
-      >
-        <div className="absolute inset-0 bg-black/50" />
-        <h1 className="relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
-          {user ? `Welcome onboard${userName ? `, ${userName}` : ''}!` : 'Welcome onboard!'}
-        </h1>
-        {!isEmployee && (
-          <p className="relative z-10 mt-4 text-white/90 text-lg">
-            {role === 'companyHR' ? 'HR Console' : 'Manager Console'}
-          </p>
-        )}
-      </section>
+      {isEmployee && (
+        <section
+          className="relative w-full min-h-[60vh] flex items-center justify-center bg-cover bg-center"
+          style={{ backgroundImage: "url('/onboarding-bg.jpg')" }}
+        >
+          <div className="absolute inset-0 bg-black/50" />
+          <h1 className="relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
+            {user ? `Welcome onboard${userName ? `, ${userName}` : ''}!` : 'Welcome onboard!'}
+          </h1>
+          {!isEmployee && (
+            <p className="relative z-10 mt-4 text-white/90 text-lg">
+              {role === 'companyHR' ? 'HR Console' : 'Manager Console'}
+            </p>
+          )}
+        </section>
+      )}
 
       {/* EMPLOYEE VIEW */}
       {isEmployee ? (
@@ -589,6 +592,19 @@ export default function EmployeeOnboarding() {
                       >
                         {step.title || `Step ${i + 1}`}
                       </button>
+
+                      {/* <button
+                        type="button"
+                        onClick={() => setOpenIdx(isOpen ? null : i)}
+                        className="text-lg font-semibold text-black hover:text-gray-700 transition text-left inline-flex items-center gap-2"
+                      >
+                        <span>{step.title || `Step ${i + 1}`}</span>
+                        {step._scope === 'dept' && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                            Department
+                          </span>
+                        )}
+                      </button> */}
 
                       {Array.isArray(step.tasks) && step.tasks.length > 0 && (
                         <div
