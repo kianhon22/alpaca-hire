@@ -77,11 +77,16 @@ export default function NavigationBar() {
 
   // Soft-guard: if current path is not in visible tabs, push to preferred landing
   useEffect(() => {
-    if (!loading && role && pathname) {
-      const allowed = visibleTabs.some(t => isActive(t.href));
-      if (!allowed) router.replace(preferredLanding);
+    if (loading) return;
+
+    const inVisibleTabs = visibleTabs.some(
+      t => pathname === t.href || pathname?.startsWith(t.href + '/')
+    );
+
+    if (!inVisibleTabs && preferredLanding) {
+      router.replace(preferredLanding);
     }
-  }, [loading, role, pathname, visibleTabs, preferredLanding, router]);
+  }, [loading, pathname, visibleTabs, preferredLanding, router]);
 
   const handleSignOut = async () => {
     await signOut(auth);
