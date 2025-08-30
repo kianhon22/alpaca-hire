@@ -21,8 +21,8 @@ function completionKeyForTask(t) {
   if (t.completionKey) return t.completionKey;
   if (t.type === 'course' && t.courseId) return `training_${t.courseId}`;
   if (t.type === 'page' && t.route) {
-    const slug = t.route.replace(/^\/+/, '').replace(/\//g, '_'); // onboarding_orientation_welcome-video
-    return slug.split('_').slice(1).join('_'); // orientation_welcome-video
+    const slug = t.route.replace(/^\/+/, '').replace(/\//g, '_');
+    return slug.split('_').slice(1).join('_');
   }
   return null;
 }
@@ -152,31 +152,29 @@ function ManageSteps({ role }) {
   }
 
   const activeLabel = useMemo(() => {
-    if (tab === 'base') return 'General (Base)';
+    if (tab === 'base') return 'General Tasks';
     const d = DEPARTMENTS.find(d => d.key === tab);
-    return d ? `Department – ${d.label}` : 'Department';
+    return d ? `Department Tasks – ${d.label}` : 'Department Tasks';
   }, [tab]);
 
   return (
     <section className="w-full bg-white">
       <div className="max-w-6xl mx-auto px-6 py-10 text-black">
-        <h2 className="text-2xl font-bold mb-2">
-          {role === 'companyHR' ? 'HR Onboarding Console' : 'Manager Onboarding Console'}
-        </h2>
+        <h2 className="text-2xl font-bold mb-2">Onboarding Tasks</h2>
         <p className="text-black/70 mb-6">Manage onboarding steps and tasks.</p>
 
         <div className="flex gap-2 mb-6">
           <button
             onClick={() => setTab('base')}
-            className={`px-3 py-1.5 rounded-lg border ${tab === 'base' ? 'bg-black text-white' : 'bg-white'}`}
+            className={`px-3 py-1.5 rounded-lg border ${tab === 'base' ? 'bg-primary text-white' : 'bg-white'}`}
           >
-            General (Base)
+            General
           </button>
           {DEPARTMENTS.map(d => (
             <button
               key={d.key}
               onClick={() => setTab(d.key)}
-              className={`px-3 py-1.5 rounded-lg border ${tab === d.key ? 'bg-black text-white' : 'bg-white'}`}
+              className={`px-3 py-1.5 rounded-lg border ${tab === d.key ? 'bg-primary text-white' : 'bg-white'}`}
             >
               {d.label}
             </button>
@@ -185,13 +183,7 @@ function ManageSteps({ role }) {
 
         <div className="rounded-xl border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="font-semibold">{activeLabel} — Steps</div>
-            <button
-              onClick={() => setNewStep({ id: '', title: '', summary: '', order: (steps?.length || 0) + 1, tasks: [] })}
-              className="px-3 py-1.5 rounded-lg border"
-            >
-              New Step
-            </button>
+            <div className="font-semibold">{activeLabel}</div>
           </div>
 
           {/* New step form */}
@@ -210,7 +202,7 @@ function ManageSteps({ role }) {
                 onChange={e => setNewStep(s => ({ ...s, title: e.target.value }))}
               />
               <input
-                placeholder="summary"
+                placeholder="description"
                 className="rounded-lg border px-3 py-2 md:col-span-2"
                 value={newStep.summary}
                 onChange={e => setNewStep(s => ({ ...s, summary: e.target.value }))}
@@ -224,8 +216,8 @@ function ManageSteps({ role }) {
               />
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={() => saveStep(newStep)}>
-                Save Step
+              <button className="px-3 py-1.5 rounded-lg bg-primary text-white" onClick={() => saveStep(newStep)}>
+                Add Step
               </button>
               <button
                 className="px-3 py-1.5 rounded-lg border"
@@ -240,7 +232,7 @@ function ManageSteps({ role }) {
           <div className="grid grid-cols-12 gap-2 px-4 py-2 font-semibold bg-white border-b">
             <div className="col-span-2">ID</div>
             <div className="col-span-3">Title</div>
-            <div className="col-span-4">Summary</div>
+            <div className="col-span-4">Description</div>
             <div className="col-span-1">Order</div>
             <div className="col-span-2 text-right">Actions</div>
           </div>
@@ -463,7 +455,9 @@ function ManageSteps({ role }) {
 
 export default function EmployeeOnboarding() {
   const [user, setUser] = useState(null);
-  const [userDoc, setUserDoc] = useState(null);
+  // undefined = still loading; null/object = resolved
+  const [userDoc, setUserDoc] = useState(undefined);
+
   const [steps, setSteps] = useState([]);
   const [doneSet, setDoneSet] = useState(new Set());
   const [openIdx, setOpenIdx] = useState(null);
@@ -473,28 +467,39 @@ export default function EmployeeOnboarding() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u || null);
-      if (u) {
+      if (!u) {
+        setUserDoc(null);
+        return;
+      }
+      try {
         const snap = await getDoc(doc(db, 'users', u.uid));
         setUserDoc(snap.exists() ? snap.data() : null);
+      } catch (e) {
+        console.error('user doc load failed', e);
+        setUserDoc(null);
       }
     });
     return () => unsub();
   }, []);
 
-  // fetch steps + completion flags only for employees
+  // derive role — stays null until userDoc arrives
+  const role = userDoc?.role ?? null;
+  const isEmployee = role === 'employee';
+
+  // fetch steps + completion flags only for employees (when role known)
   useEffect(() => {
     async function run() {
       if (!user) return;
+      if (role == null) return; // wait until role is known
 
-      const role = (userDoc && userDoc.role) || 'employee';
-      if (role !== 'employee') {
+      if (!isEmployee) {
         setLoading(false);
         return;
       }
 
       setLoading(true);
       try {
-        const deptKey = (userDoc && userDoc.departmentId) || null;
+        const deptKey = userDoc?.departmentId || null;
 
         const baseQ = query(collection(db, 'onboarding', 'base', 'steps'), orderBy('order', 'asc'));
         const baseSteps = (await getDocs(baseQ)).docs.map(d => ({ id: d.id, ...d.data() }));
@@ -523,15 +528,11 @@ export default function EmployeeOnboarding() {
       }
     }
     run();
-  }, [user, userDoc && userDoc.departmentId, userDoc && userDoc.role]);
-
-  const userName = (userDoc && userDoc.name) || null;
-  const role = (userDoc && userDoc.role) || 'employee';
-  const isEmployee = role === 'employee';
+  }, [user, role, userDoc?.departmentId, isEmployee]);
 
   return (
     <div className="fixed inset-0 top-[64px] w-screen min-h-[calc(100vh-64px)] overflow-y-auto">
-      {/* HERO */}
+      {/* Only show the employee hero if the role is known AND employee */}
       {isEmployee && (
         <section
           className="relative w-full min-h-[60vh] flex items-center justify-center bg-cover bg-center"
@@ -539,18 +540,18 @@ export default function EmployeeOnboarding() {
         >
           <div className="absolute inset-0 bg-black/50" />
           <h1 className="relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
-            {user ? `Welcome onboard${userName ? `, ${userName}` : ''}!` : 'Welcome onboard!'}
+            Welcome onboard!
           </h1>
-          {!isEmployee && (
-            <p className="relative z-10 mt-4 text-white/90 text-lg">
-              {role === 'companyHR' ? 'HR Console' : 'Manager Console'}
-            </p>
-          )}
         </section>
       )}
 
-      {/* EMPLOYEE VIEW */}
-      {isEmployee ? (
+      {/* While role is unknown, you can show nothing or a tiny placeholder */}
+      {role == null ? (
+        <section className="w-full bg-white">
+          <div className="max-w-3xl mx-auto px-6 py-10 text-black">Loading…</div>
+        </section>
+      ) : isEmployee ? (
+        /* EMPLOYEE VIEW */
         <section className="w-full bg-white">
           <div className="max-w-3xl mx-auto px-6 pt-10 text-black">
             <p className="text-xl font-medium">
@@ -571,7 +572,6 @@ export default function EmployeeOnboarding() {
               <ol className="relative border-s border-black/70 mt-10">
                 {steps.map((step, i) => {
                   const isOpen = openIdx === i;
-
                   return (
                     <li
                       key={step.id || i}
@@ -592,19 +592,6 @@ export default function EmployeeOnboarding() {
                       >
                         {step.title || `Step ${i + 1}`}
                       </button>
-
-                      {/* <button
-                        type="button"
-                        onClick={() => setOpenIdx(isOpen ? null : i)}
-                        className="text-lg font-semibold text-black hover:text-gray-700 transition text-left inline-flex items-center gap-2"
-                      >
-                        <span>{step.title || `Step ${i + 1}`}</span>
-                        {step._scope === 'dept' && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                            Department
-                          </span>
-                        )}
-                      </button> */}
 
                       {Array.isArray(step.tasks) && step.tasks.length > 0 && (
                         <div
