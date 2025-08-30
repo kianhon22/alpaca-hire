@@ -8,7 +8,7 @@ import {
   setDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import { vi } from 'zod/v4/locales/index.cjs';
+import AttachmentsModal from '@/components/ui/attachment-modal';
 
 /* -------------------- utils -------------------- */
 const ROLES = {
@@ -44,8 +44,13 @@ function normalizeRole(raw) {
 }
 
 function routeForTask(t) {
+  // new: upload tasks go to the generic page
+  if (t && t.type === 'upload' && t.kind) return `/onboarding/tasks/${t.kind}`;
+
   if (t && t.type === 'course' && t.courseId) return `/onboarding/training/${t.courseId}`;
   if (t && t.type === 'page' && t.route) return t.route;
+  if (t && t.type === 'video' && t.url) return t.url;   // optional: open external
+  if (t && t.type === 'doc' && t.url) return t.url;     // optional: open external
   return null;
 }
 
@@ -64,27 +69,18 @@ function completionKeyForTask(t) {
   if (!t) return null;
   if (t.completionKey) return String(t.completionKey);
 
-  // explicit types
-  if (t.type === 'course' && t.courseId) return `training_${t.courseId}`;
+  // new: uploads use "upload_<kind>"
+  if (t.type === 'upload' && t.kind) return `upload_${t.kind}`;
 
+  if (t.type === 'course' && t.courseId) return `training_${t.courseId}`;
   if (t.type === 'page' && t.route) {
     const slug = safeSlug(String(t.route).replace(/^\/+/, ''));
-    // keep whole slug; don't slice off the first segment or you'll collide/lose info
     return `page_${slug}`;
   }
-
-  if (t.type === 'video' && t.url) {
-    return `video_${safeSlug(t.url)}`;
-  }
-
-  if (t.type === 'doc' && t.url) {
-    return `doc_${safeSlug(t.url)}`;
-  }
-
-  // fallbacks so every task can still be counted
+  if (t.type === 'video' && t.url) return `video_${safeSlug(t.url)}`;
+  if (t.type === 'doc' && t.url) return `doc_${safeSlug(t.url)}`;
   if (t.id) return `task_${safeSlug(t.id)}`;
   if (t.label) return `task_${safeSlug(t.label)}`;
-
   return null;
 }
 
@@ -343,18 +339,35 @@ function ManageSteps({ scopeKey, scopeLabel }) {
                                 <option value="course">course</option>
                                 <option value="doc">doc</option>
                                 <option value="video">video</option>
+                                <option value="upload">upload</option> 
                               </select>
-                              {(t.type === 'page' || t.type === 'video' || t.type === 'doc') ? (
-                                <input className="col-span-3 rounded-lg border px-2 py-1" placeholder="route or url"
-                                       value={t.route || t.url || ''} onChange={e => {
-                                         const v = e.target.value;
-                                         setTaskDrafts(a => a.map((x,i)=> i===idx
-                                           ? { ...x, route: t.type==='page'?v:undefined, url: t.type!=='page'?v:undefined }
-                                           : x));
-                                       }}/>
+                              {t.type === 'upload' ? (
+                                // simple "kind" input or dropdown so HR never types routes
+                                <input
+                                  className="col-span-3 rounded-lg border px-2 py-1"
+                                  placeholder="kind (e.g. personal_details, signed_contract, bank_info, id_tax)"
+                                  value={t.kind || ''}
+                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,kind:e.target.value.trim()}:x))}
+                                />
+                              ) : (t.type === 'page' || t.type === 'video' || t.type === 'doc') ? (
+                                <input
+                                  className="col-span-3 rounded-lg border px-2 py-1"
+                                  placeholder="route or url"
+                                  value={t.route || t.url || ''}
+                                  onChange={e => {
+                                    const v = e.target.value;
+                                    setTaskDrafts(a => a.map((x,i)=> i===idx
+                                      ? { ...x, route: t.type==='page'?v:undefined, url: t.type!=='page'?v:undefined }
+                                      : x));
+                                  }}
+                                />
                               ) : (
-                                <input className="col-span-3 rounded-lg border px-2 py-1" placeholder="courseId"
-                                       value={t.courseId || ''} onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,courseId:e.target.value}:x))}/>
+                                <input
+                                  className="col-span-3 rounded-lg border px-2 py-1"
+                                  placeholder="courseId"
+                                  value={t.courseId || ''}
+                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,courseId:e.target.value}:x))}
+                                />
                               )}
                               <input className="col-span-2 rounded-lg border px-2 py-1" placeholder="completionKey (optional)"
                                      value={t.completionKey || ''} onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,completionKey:e.target.value}:x))}/>
@@ -414,6 +427,7 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
   const [statusFilter, setStatusFilter] = useState('all'); // all | not-started | in-progress | done
   const [deptFilter, setDeptFilter] = useState('all');
   const [depts, setDepts] = useState([]);
+  const [showAttachmentsFor, setShowAttachmentsFor] = useState(null); 
 
   useEffect(() => {
     async function run() {
@@ -587,9 +601,12 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
                     <td className="px-4 py-3">{fmtDate(r.lastUpdated)}</td>
                     <td className="px-4 py-3">{dueCell}</td>
                     <td className="px-4 py-3 text-right">
-                      <Link href={`/admin/attachments/${r.uid}`} className="text-blue-600 hover:underline">
-                        View
-                      </Link>
+                    <button
+                      className="text-blue-600 hover:underline"
+                      onClick={() => setShowAttachmentsFor(r.uid)}
+                    >
+                      View
+                    </button>
                     </td>
                   </tr>
                 );
@@ -598,6 +615,13 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
           </table>
         </div>
       </div>
+      {showAttachmentsFor && (
+        <AttachmentsModal
+          uid={showAttachmentsFor}
+          open={!!showAttachmentsFor}
+          onClose={() => setShowAttachmentsFor(null)}
+        />
+      )}
     </section>
   );
 }
