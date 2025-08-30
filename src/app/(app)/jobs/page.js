@@ -1,0 +1,123 @@
+'use client'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { db } from '@/lib/firebase';
+import { collection, getDocs } from 'firebase/firestore';
+import { useRouter } from 'next/navigation';
+import React, { useEffect, useState } from 'react'
+
+function Jobs() {
+
+  const [jobs, setJobs] = useState([]); // Store job lists
+  const [activeCount, setActiveCount] = useState(0);
+
+  const [searchTerm, setSearchTerm] = useState('') // Search text input
+
+  const router = useRouter();
+
+// Fetch 'jobs' database
+  useEffect(() => {
+    async function fetchJobs() {
+      try {
+        const querySnapshot = await getDocs(collection(db, "jobs"));
+        let active = 0;
+        const allJobs = [];
+
+        querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          allJobs.push({ id: doc.id, ...data });
+          if (data.status === "open") active++;
+        });
+
+        setJobs(allJobs);
+        setActiveCount(active);
+
+      } catch (error) {
+        console.error("Error fetching jobs:", error);
+      }
+    }
+
+    fetchJobs();
+  }, []);
+
+  // Filtered jobs (text search)
+  const filteredJobs = jobs.filter((job) => {
+    const lowerSearch = searchTerm.toLowerCase();
+    return (
+        job.title.toLowerCase().includes(lowerSearch) ||
+        job.description?.toLowerCase().includes(lowerSearch) ||
+        job.tags?.some(tag => tag.toLowerCase().includes(lowerSearch))
+    );
+  });
+
+  
+  return (
+    <div className="mx-10">
+        <div className="flex items-center gap-2 mb-4">
+            <h1 className="text-2xl font-bold">Recruiting</h1>
+            <Badge variant="outline" className="bg-[#2B99FF] text-white">{activeCount || 0}</Badge>
+        </div>
+
+        <div className="flex flex-col gap-4 my-5">
+            <div className='flex flex-col md:flex-row gap-4'>
+            <Input
+                placeholder='Search jobs...'
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className='bg-gray-100'
+            />
+            </div>
+        </div>
+
+        {filteredJobs
+        .filter((job) => job.status === "open")
+        .map((job) => (
+          <div
+            key={job.id}
+            className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg mt-4"
+          >
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold">{job.title}</h2>
+              <p className="text-sm text-gray-500">
+                {job.createdAt?.toDate
+                  ? job.createdAt.toDate().toLocaleDateString()
+                  : new Date(job.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            <h2 className="text-xs text-gray-600">{job.description}</h2>
+            <div className="flex justify-between items-center mt-3">
+              <div className='flex flex-wrap gap-2'>
+                {job.tags && job.tags.length > 0 ? (
+                  job.tags.map((skill, idx) => {
+                    const colors = ["#FFAFCC", "#CDB4DB", "#A2D2FF"];
+                    const color = colors[idx % colors.length];
+                    return (
+                        <Badge
+                            key={idx}
+                            variant="outline"
+                            className="text-white border-0"
+                            style={{ backgroundColor: color }}
+                        >
+                            {skill}
+                        </Badge>
+                    );
+                  })
+                ) : (
+                  <Badge variant="outline" className="bg-gray-200 text-gray-500">
+                    No skills listed
+                  </Badge>
+                )}
+              </div>
+              <Button className="bg-[#2B99FF] text-white hover:bg-[#1a7bd8] cursor-pointer"
+              onClick={() => router.push(`/jobs/application/${job.id}`)}>
+                Apply
+              </Button>
+            </div>
+          </div>
+        ))}
+    </div>
+  )
+}
+
+export default Jobs

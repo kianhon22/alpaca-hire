@@ -21,14 +21,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
@@ -211,7 +203,7 @@ export default function TalentPage() {
               </div>
             ))}
           </TabsContent>
-        <TabsContent value="closed">
+        <TabsContent value="closed" className="space-y-4 mt-2">
           {jobs
             .filter((job) => job.status === "closed")
             .map((job) => (

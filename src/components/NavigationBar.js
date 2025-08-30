@@ -13,6 +13,7 @@ const ROLES = {
   EMPLOYEE: 'employee',
   MANAGER: 'departmentmanager',
   HR: 'companyhr',
+  APPLICANT: 'applicant',
 };
 
 /** Make any Firestore role string consistent with our constants */
@@ -21,6 +22,7 @@ function normalizeRole(raw) {
   const r = String(raw).toLowerCase().trim();
   if (r === 'companyhr' || r === 'company-hr' || r === 'hr') return ROLES.HR;
   if (r === 'departmentmanager' || r === 'deptmanager' || r === 'manager') return ROLES.MANAGER;
+  if (r === 'applicant' || r === 'candidate') return ROLES.APPLICANT;
   if (r === 'employee') return ROLES.EMPLOYEE;
   return ROLES.EMPLOYEE;
 }
@@ -29,6 +31,8 @@ const tabs = [
   { key: 'dashboard',  label: 'Dashboard',  href: '/dashboard',  roles: [ROLES.MANAGER, ROLES.HR] },
   { key: 'talent',     label: 'Talent',     href: '/talent',     roles: [ROLES.MANAGER, ROLES.HR] },
   { key: 'onboarding', label: 'Onboarding', href: '/onboarding', roles: [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.HR] },
+  { key: 'applicantDashboard',       label: 'Dashboard',       href: '/applicantDashboard',       roles: [ROLES.APPLICANT] },
+  { key: 'jobs',       label: 'Job Search',       href: '/jobs',       roles: [ROLES.APPLICANT] },
 ];
 
 export default function NavigationBar() {
@@ -53,6 +57,7 @@ export default function NavigationBar() {
         const snap = await getDoc(doc(db, 'users', u.uid));
         const data = snap.exists() ? snap.data() : {};
         setRole(normalizeRole(data.role));
+        console.log('Loaded role from Firestore:', data.role, '→', normalizeRole(data.role));
       } catch (e) {
         console.error('Role load error:', e);
         setRole(ROLES.EMPLOYEE);
@@ -69,8 +74,10 @@ export default function NavigationBar() {
     return tabs.filter(t => t.roles.includes(role));
   }, [role]);
 
-  // Preferred landing: HR/Manager -> /dashboard, Employee -> /onboarding
-  const preferredLanding = role === ROLES.EMPLOYEE ? '/onboarding' : '/dashboard';
+  // Preferred landing: HR/Manager -> /dashboard, Employee -> /onboarding, Applicant -> applicantDashboard
+  let preferredLanding = '/dashboard';
+  if (role === ROLES.EMPLOYEE) preferredLanding = '/onboarding';
+  if (role === ROLES.APPLICANT) preferredLanding = '/applicantDashboard';
 
   const isActive = (href) =>
     pathname && (pathname === href || pathname.startsWith(href + '/'));
