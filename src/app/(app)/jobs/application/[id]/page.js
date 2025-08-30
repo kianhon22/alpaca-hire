@@ -85,7 +85,7 @@ function JobApplication() {
   const onSubmit=async(e)=>{
     e.preventDefault()
     setLoading(true)
-
+    
     try {
       const user = auth.currentUser;
       if (!user) {
@@ -94,15 +94,19 @@ function JobApplication() {
       }
 
       let fileUrl = "";
+      let fileBlob = null;
+
       if (supportDoc) {
         // Upload PDF file to storage/applications/{uid}/{filename}
         const storageRef = ref(storage, `applications/${user.uid}/${supportDoc.name}`);
         await uploadBytes(storageRef, supportDoc);
         fileUrl = await getDownloadURL(storageRef);
+
+        fileBlob = supportDoc;
       }
 
       // Save application data to Firestore
-      await addDoc(collection(db, "applications"), {
+      const appRef = await addDoc(collection(db, "applications"), {
         applicantId: user.uid,
         jobId: id,
         nationality,
@@ -111,7 +115,39 @@ function JobApplication() {
         portfolioLink,
         linkedinLink,
         supportDoc: fileUrl,
+        status: "review",
         createdAt: serverTimestamp()
+      });
+
+      // Call backend API for OCR + NER + scoring
+      const formData = new FormData();
+      formData.append("application_id", appRef.id);
+      if (fileBlob) {
+        formData.append("file", fileBlob);
+      }
+
+      const response = await fetch("http://127.0.0.1:8000/apply", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Backend scoring failed");
+      }
+
+      const result = await response.json();
+
+      // Save backend results into 'screening' collection
+      await addDoc(collection(db, "screening"), {
+        applicationId: appRef.id,
+        skillsExtracted: result.skills_extracted,
+        scoreBreakdown: {
+          skillMatch: result.skill_score,
+          resumeRelevance: result.resume_score,
+          experienceMatch: result.experience_score,
+        },
+        finalScore: result.final_score,
+        createdAt: serverTimestamp(),
       });
 
       setShowDialog(true);
