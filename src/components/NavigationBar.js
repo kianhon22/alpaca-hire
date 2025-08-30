@@ -61,7 +61,6 @@ export default function NavigationBar() {
         const snap = await getDoc(doc(db, 'users', u.uid));
         const data = snap.exists() ? snap.data() : {};
         setRole(normalizeRole(data.role));
-        console.log('Loaded role from Firestore:', data.role, '→', normalizeRole(data.role));
       } catch (e) {
         console.error('Role load error:', e);
         setRole(ROLES.EMPLOYEE);

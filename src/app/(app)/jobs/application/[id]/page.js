@@ -1,27 +1,34 @@
 'use client'
 import React from 'react'
 import { useParams, useRouter } from 'next/navigation';
-import { auth, db } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth, db, storage } from '@/lib/firebase';
+import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { ChevronLeft, LoaderCircle } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
-  Select, SelectContent, SelectItem,
-  SelectTrigger, SelectValue
-} from '@/components/ui/select'
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogFooter,
+  AlertDialogAction,
+} from "@/components/ui/alert-dialog"
 
 function JobApplication() {
   const { id } = useParams();
+  const router = useRouter();
+
   const [job, setJob] = useState(null);
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
+  const [showDialog, setShowDialog] = useState(false);
 
   // Job Application Form details
   const [nationality, setNationality] = useState("")
@@ -30,6 +37,7 @@ function JobApplication() {
   const [yearOfExperience, setYearOfExperience] = useState("")
   const [portfolioLink, setPortfolioLink] = useState("")
   const [linkedinLink, setLinkedinLink] = useState("")
+  const [supportDoc, setSupportDoc] = useState(null)
 
   // Country list
   const countries = [
@@ -77,6 +85,42 @@ function JobApplication() {
   const onSubmit=async(e)=>{
     e.preventDefault()
     setLoading(true)
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        alert("Please login first");
+        return;
+      }
+
+      let fileUrl = "";
+      if (supportDoc) {
+        // Upload PDF file to storage/applications/{uid}/{filename}
+        const storageRef = ref(storage, `applications/${user.uid}/${supportDoc.name}`);
+        await uploadBytes(storageRef, supportDoc);
+        fileUrl = await getDownloadURL(storageRef);
+      }
+
+      // Save application data to Firestore
+      await addDoc(collection(db, "applications"), {
+        applicantId: user.uid,
+        jobId: id,
+        nationality,
+        phone: `${countryCode}${phone}`,
+        yearOfExperience,
+        portfolioLink,
+        linkedinLink,
+        supportDoc: fileUrl,
+        createdAt: serverTimestamp()
+      });
+
+      setShowDialog(true);
+    } catch (error) {
+      console.error("Error submitting application:", error);
+      alert("Something went wrong. Please try again.");
+    }
+
+    setLoading(false);
   }
 
   return (
@@ -219,6 +263,26 @@ function JobApplication() {
           </form>
         </div>
       </div>
+
+      <AlertDialog open={showDialog} onOpenChange={setShowDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Application Submitted 🎉</AlertDialogTitle>
+          </AlertDialogHeader>
+          <p className="text-gray-600">Your job application has been submitted successfully.</p>
+          <AlertDialogFooter>
+            <AlertDialogAction 
+              onClick={() => {
+                setShowDialog(false)
+                router.push("/applicantDashboard")
+              }}
+            >
+              Go to Dashboard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   )
 }
