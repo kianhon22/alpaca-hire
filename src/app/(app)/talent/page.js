@@ -40,6 +40,7 @@ import { Badge } from "@/components/ui/badge";
 
 export default function TalentPage() {
   const [jobs, setJobs] = useState([]); // Store job lists
+  const [departments, setDepartments] = useState([]);
   const [activeCount, setActiveCount] = useState(0);
   const [closedCount, setClosedCount] = useState(0);
   
@@ -85,6 +86,19 @@ export default function TalentPage() {
     fetchJobs();
   }, []);
 
+  // Fetch departments
+  useEffect(() => {
+    async function fetchDepts() {
+      try {
+        const snap = await getDocs(collection(db, "departments"));
+        setDepartments(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (e) {
+        console.error("Error fetching departments:", e);
+      }
+    }
+    fetchDepts();
+  }, []);
+
   // Filter & fetch manager frm 'users' database
   useEffect(() => {
     async function fetchManagers() {
@@ -119,8 +133,8 @@ export default function TalentPage() {
       await addDoc(collection(db, "jobs"), {
         title: jobTitle,
         description: jobDescription,
-        department: jobDepartment,
-        managerId: jobManager,
+        departmentId: jobDepartment || null,
+        managerId: jobManager || null,
         status: "open", // default status
         createdAt: serverTimestamp(),
         tags: requiredSkills ? requiredSkills.split(",").map(skill => skill.trim()) : [],
@@ -272,8 +286,16 @@ export default function TalentPage() {
                 </div>
                 <div>
                   <label className="text-black text-sm font-bold">Department <span className="text-red-500">*</span></label>
-                  <Input className="bg-gray-100 p-2 rounded-md border-2" placeholder="e.g. Engineering" required
-                  onChange={(event)=>setJobDepartment(event.target.value)}/>
+                  <Select value={jobDepartment} onValueChange={(v)=>setJobDepartment(v)} required>
+                    <SelectTrigger className="w-[240px] bg-gray-100 p-2 rounded-md border-2">
+                      <SelectValue placeholder="Select Department" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {departments.map((d)=>(
+                        <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className='my-2'>
                   <label className="text-black text-sm font-bold">Manager <span className="text-red-500">*</span></label>

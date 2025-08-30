@@ -32,10 +32,12 @@ function normalizeRole(raw) {
 
 const tabs = [
   { key: 'dashboard',  label: 'Dashboard',  href: '/dashboard',  roles: [ROLES.MANAGER, ROLES.HR] },
-  { key: 'talent',     label: 'Talent',     href: '/talent',     roles: [ROLES.MANAGER, ROLES.HR] },
-  { key: 'onboarding', label: 'Onboarding', href: '/onboarding', roles: [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.HR] },
   { key: 'applicantDashboard',       label: 'Dashboard',       href: '/applicantDashboard',       roles: [ROLES.APPLICANT] },
+  { key: 'talent',     label: 'Recruitment',     href: '/talent',     roles: [ROLES.MANAGER, ROLES.HR] },
+  { key: 'applications', label: 'Applications', href: '/applications', roles: [ROLES.MANAGER, ROLES.HR] },
+  { key: 'onboarding', label: 'Onboarding', href: '/onboarding', roles: [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.HR] },
   { key: 'jobs',       label: 'Job Search',       href: '/jobs',       roles: [ROLES.APPLICANT] },
+  { key: 'configuration', label: 'Configurations', href: '/configuration', roles: [ROLES.HR] },
   // { key: 'about', label: 'About', href: '/about', roles: [...] } // handled as dropdown below
 ];
 
@@ -143,26 +145,24 @@ export default function NavigationBar() {
                 </NavMenu.Item>
               ))}
 
-                 {/* About */}
-                <NavMenu.Item className="relative">
-                  <NavMenu.Trigger className="group inline-flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 data-[state=open]:bg-[#e9f4ff] data-[state=open]:text-[#2b99ff]">
-                    About
-                    <svg className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" viewBox="0 0 24 24">
-                      <path d="M7 10l5 5 5-5" fill="currentColor" />
-                    </svg>
-                  </NavMenu.Trigger>
-
-                  {/* This will now sit directly under the About trigger */}
-                  <NavMenu.Content className="absolute top-full left-0 mt-2 rounded-lg border bg-white p-2 shadow-xl z-[60]">
-                    <ul className="grid min-w-[220px] gap-1">
-                      <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/background">Background</Link></NavMenu.Link></li>
-                      <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/culture">Culture</Link></NavMenu.Link></li>
-                      <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/department">Department</Link></NavMenu.Link></li>
-                    </ul>
-                  </NavMenu.Content>
-                </NavMenu.Item>
-              </NavMenu.List>
-            </NavMenu.Root>
+               {/* About dropdown (placeholder) */}
+              <NavMenu.Item className="relative">
+                <NavMenu.Trigger className="group inline-flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 data-[state=open]:bg-[#e9f4ff] data-[state=open]:text-[#2b99ff]">
+                  About
+                  <svg className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" viewBox="0 0 24 24">
+                    <path d="M7 10l5 5 5-5" fill="currentColor" />
+                  </svg>
+                </NavMenu.Trigger>
+                <NavMenu.Content className="absolute top-full left-0 mt-2 rounded-lg border bg-white p-2 shadow-xl z-[60]">
+                  <ul className="grid min-w-[220px] gap-1">
+                    <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/background">Background</Link></NavMenu.Link></li>
+                    <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/culture">Culture</Link></NavMenu.Link></li>
+                    <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/department">Department</Link></NavMenu.Link></li>
+                  </ul>
+                </NavMenu.Content>
+              </NavMenu.Item>
+            </NavMenu.List>
+          </NavMenu.Root>
 
           {/* User box */}
           <div className="flex items-center gap-3">
@@ -179,7 +179,7 @@ export default function NavigationBar() {
           </div>
         </div>
 
-        {/* NAV (mobile) — simple stack incl. About links */}
+        {/* NAV (mobile) */}
         <nav className="md:hidden pb-3 flex flex-wrap items-center gap-2">
           {visibleTabs.map(tab => (
             <Link
@@ -193,20 +193,6 @@ export default function NavigationBar() {
               {tab.label}
             </Link>
           ))}
-          <div className="flex flex-col gap-1 basis-full mt-1">
-            <span className="px-3 py-2 text-sm font-medium text-gray-700">About</span>
-            <div className="pl-2 flex gap-2">
-              <Link href="/about/background" className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100">
-                Background
-              </Link>
-              <Link href="/about/culture" className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100">
-                Culture
-              </Link>
-              <Link href="/about/department" className="px-3 py-2 rounded-md text-sm text-gray-700 hover:bg-gray-100">
-                Department
-              </Link>
-            </div>
-          </div>
         </nav>
       </div>
     </header>
