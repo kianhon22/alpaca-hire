@@ -501,6 +501,19 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
     return true;
   });
 
+  const sorted = useMemo(() => {
+    const toKey = (v) =>
+      typeof v === 'number' && !Number.isNaN(v) ? v : Number.POSITIVE_INFINITY;
+
+    return [...filtered].sort((a, b) => {
+      const ad = toKey(a.dueAt);
+      const bd = toKey(b.dueAt);
+      if (ad !== bd) return ad - bd;          // earlier due date first
+      if (a.pct !== b.pct) return a.pct - b.pct; // less complete first
+      return (a.lastUpdated || 0) - (b.lastUpdated || 0); // older activity first
+    });
+  }, [filtered]);
+
   return (
     <section className="w-full bg-white">
       <div className="max-w-6xl mx-auto px-6 py-8 text-black">
@@ -543,7 +556,7 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
                 <tr><td className="px-4 py-6" colSpan={8}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td className="px-4 py-6 text-red-600" colSpan={8}>No employees match.</td></tr>
-              ) : filtered.map(r => {
+              ) : sorted.map(r => {
                 const dleft = daysLeft(r.dueAt);
                 // const dueBadge =
                 //   r.dueAt
