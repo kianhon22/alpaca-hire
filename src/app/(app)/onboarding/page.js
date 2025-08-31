@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import {
@@ -8,33 +8,21 @@ import {
   setDoc, updateDoc, deleteDoc
 } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
-import AttachmentsModal from '@/components/ui/attachment-modal';
+import { Lock } from 'lucide-react';
 
-/* -------------------- utils -------------------- */
-const ROLES = {
-  EMPLOYEE: 'employee',
-  MANAGER: 'departmentmanager',
-  HR: 'companyhr',
-};
+import AttachmentsModal from '@/components/ui/attachment-modal';
+import TaskModal from '@/components/onboarding/TaskModal';
+
+/* -------------------------------- utils -------------------------------- */
+const ROLES = { EMPLOYEE: 'employee', MANAGER: 'departmentmanager', HR: 'companyhr' };
 
 function toMillis(v) {
   if (!v) return null;
   if (typeof v === 'number') return v;
-  if (typeof v.toMillis === 'function') return v.toMillis();
-  const parsed = Date.parse(v);           // handles ISO strings
+  if (v && typeof v.toMillis === 'function') return v.toMillis();
+  const parsed = Date.parse(v);
   return Number.isNaN(parsed) ? null : parsed;
 }
-
-function capitalize(w) {
-  return w ? w[0].toUpperCase() + w.slice(1) : '';
-}
-
-function prettyDept(id) {
-  if (!id || typeof id !== 'string') return '';
-  let s = id.startsWith('dept_') ? id.slice(5) : id; // strip "dept_"
-  return s.split('_').map(capitalize).join(' ');     // "dept_engineering" -> "Engineering"
-}
-
 function normalizeRole(raw) {
   if (!raw) return ROLES.EMPLOYEE;
   const r = String(raw).toLowerCase();
@@ -43,45 +31,106 @@ function normalizeRole(raw) {
   return ROLES.EMPLOYEE;
 }
 
-function routeForTask(t) {
-  // new: upload tasks go to the generic page
-  if (t && t.type === 'upload' && t.kind) return `/onboarding/tasks/${t.kind}`;
+/* ---------------- dept lookup: id -> name ---------------- */
+function useDepartments() {
+  const [deptMap, setDeptMap] = useState({});
+  const [deptList, setDeptList] = useState([]);
+  useEffect(() => {
+    (async () => {
+      const snap = await getDocs(collection(db, 'departments'));
+      const m = {};
+      const list = [];
+      snap.docs.forEach(d => {
+        const data = d.data() || {};
+        const name = data.name || d.id;
+        m[d.id] = name;
+        list.push({ id: d.id, name });
+      });
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      setDeptMap(m);
+      setDeptList(list);
+    })();
+  }, []);
+  return { deptMap, deptList };
+}
+function deptNameOf(id, deptMap) { return id && deptMap[id] ? deptMap[id] : '—'; }
 
-  if (t && t.type === 'course' && t.courseId) return `/onboarding/training/${t.courseId}`;
-  if (t && t.type === 'page' && t.route) return t.route;
-  if (t && t.type === 'video' && t.url) return t.url;   // optional: open external
-  if (t && t.type === 'doc' && t.url) return t.url;     // optional: open external
+/* -------------- routing + completionKey helpers ------------- */
+function routeForTask(t) {
+  if (!t) return null;
+
+  const target =
+    t.target ||
+    t.route ||
+    t.url ||
+    t.videoUrl ||
+    null;
+
+  // Upload tasks open the modal
+  if (t.type === 'upload' && UPLOAD_KINDS.includes(t.kind)) return null;
+  // Form tasks open the modal
+  if (t.type === 'form' && FORM_KINDS.includes(t.kind)) return null;
+
+  // Courses: accept either target or courseId
+  if (t.type === 'course') {
+    const courseSlug = t.target || t.courseId || '';
+    return courseSlug ? `/onboarding/training/${courseSlug}` : null;
+  }
+
+  // Pages, links, videos, forms-with-target (rare)
+  if (['page', 'link', 'video'].includes(t.type) && target) return target;
+
   return null;
 }
 
-function safeSlug(s) {
-  return String(s)
-    .trim()
-    .replace(/^https?:\/\//, '')
-    .replace(/[^a-zA-Z0-9/_-]+/g, '-')   // keep simple chars
-    .replace(/\/+/g, '/')
-    .replace(/[\/]/g, '_')
-    .replace(/_+/g, '_')
-    .toLowerCase();
+function slugify(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[_\s]+/g, '-')        // spaces/underscores → hyphens
+    .replace(/[^a-z0-9-]/g, '')     // strip unsafe chars
+    .replace(/-+/g, '-')            // collapse dashes
+    .replace(/^-|-$/g, '');         // trim dashes
 }
 
-function completionKeyForTask(t) {
+function tailOfPath(urlOrPath='') {
+  try {
+    if (/^https?:\/\//i.test(urlOrPath)) {
+      const u = new URL(urlOrPath);
+      const last = u.pathname.split('/').filter(Boolean).pop();
+      return last || u.hostname.replace(/^www\./, '');
+    }
+  } catch {}
+  const parts = String(urlOrPath).split('/').filter(Boolean);
+  return parts.pop() || '';
+}
+
+function slugFromTask(t) {
+  const target = t.target || t.route || t.url || t.videoUrl || t.courseId || '';
+  if (t.type === 'upload') {
+    return `upload-${slugify(t.kind || 'file')}`;
+  }
+  if (t.type === 'form') {
+    return `form-${slugify(t.kind || 'details')}`;
+  }
+  if (t.type === 'course') {
+    return `course-${slugify(t.courseId || target || t.label || 'course')}`;
+  }
+  if (['page','link','video'].includes(t.type)) {
+    const tail = tailOfPath(target) || t.label || t.type;
+    return `${slugify(t.type)}-${slugify(tail)}`;
+  }
+  return `${slugify(t.type || 'task')}-${slugify(t.label || target || 'item')}`;
+}
+
+function completionKeyForTask(t, stepId, index) {
   if (!t) return null;
+
+  // 1) honor explicit keys if provided in Firestore
   if (t.completionKey) return String(t.completionKey);
 
-  // new: uploads use "upload_<kind>"
-  if (t.type === 'upload' && t.kind) return `upload_${t.kind}`;
-
-  if (t.type === 'course' && t.courseId) return `training_${t.courseId}`;
-  if (t.type === 'page' && t.route) {
-    const slug = safeSlug(String(t.route).replace(/^\/+/, ''));
-    return `page_${slug}`;
-  }
-  if (t.type === 'video' && t.url) return `video_${safeSlug(t.url)}`;
-  if (t.type === 'doc' && t.url) return `doc_${safeSlug(t.url)}`;
-  if (t.id) return `task_${safeSlug(t.id)}`;
-  if (t.label) return `task_${safeSlug(t.label)}`;
-  return null;
+  // 2) readable slug fallback
+  const sid = String(stepId || 'step');
+  return `${slugify(sid)}--${slugFromTask(t)}`;
 }
 
 function daysLeft(dueAtMs) {
@@ -89,6 +138,7 @@ function daysLeft(dueAtMs) {
   const d = Math.ceil((dueAtMs - Date.now()) / 86400000);
   return Number.isFinite(d) ? d : null;
 }
+function fmtDate(ms) { if (!ms) return '-'; try { return new Date(ms).toLocaleDateString(); } catch { return '-'; } }
 
 function StatusBadge({ status }) {
   const base = 'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border';
@@ -97,82 +147,64 @@ function StatusBadge({ status }) {
       ? 'text-green-700 bg-green-50 border-green-200'
       : status === 'In progress'
       ? 'text-yellow-800 bg-yellow-50 border-yellow-200'
-      : 'text-red-700 bg-red-50 border-red-200'; // Not started (default)
+      : 'text-red-700 bg-red-50 border-red-200';
   return <span className={`${base} ${cls}`}>{status}</span>;
 }
 
-function fmtDate(ms) {
-  if (!ms) return '-';
-  try { return new Date(ms).toLocaleDateString(); } catch { return '-'; }
-}
+/* -------------------------- Admin: Manage Steps ------------------------- */
+const TASK_TYPES   = ['upload', 'page', 'link', 'video', 'course', 'form'];
+const UPLOAD_KINDS = ['signed_contract', 'id_tax'];
+const FORM_KINDS   = ['personal_details', 'bank_info'];
 
-/* -------------------- Manage steps (HR/Manager) -------------------- */
-/** HR: only "base" (General Tasks)
- *  Manager: only their department (departmentId)
- */
 function ManageSteps({ scopeKey, scopeLabel }) {
   const [steps, setSteps] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // inline edit
   const [editingStep, setEditingStep] = useState(null);
-  const [showTasksFor, setShowTasksFor] = useState(null); // stepId
+  const [showTasksFor, setShowTasksFor] = useState(null);
   const [taskDrafts, setTaskDrafts] = useState([]);
 
-  // new step
-  const [newStep, setNewStep] = useState({ id: '', title: '', summary: '', order: 1, tasks: [] });
+  const [newStep, setNewStep] = useState({ id: '', title: '', summary: '', order: 1, dueInDays: null, tasks: [] });
 
   useEffect(() => {
     async function load() {
       if (!scopeKey) return;
       setLoading(true);
       try {
-        const basePath = scopeKey === 'base'
-          ? ['onboarding', 'base', 'steps']
-          : ['onboarding', scopeKey, 'steps'];
+        const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
         const qy = query(collection(db, ...basePath), orderBy('order', 'asc'));
         const snap = await getDocs(qy);
         const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setSteps(rows);
         setNewStep(s => ({ ...s, order: (rows?.length || 0) + 1 }));
-      } finally {
-        setLoading(false);
-      }
+      } finally { setLoading(false); }
     }
     load();
   }, [scopeKey]);
 
   async function refresh() {
-    const baseCol = scopeKey === 'base'
-      ? ['onboarding', 'base', 'steps']
-      : ['onboarding', scopeKey, 'steps'];
+    const baseCol = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
     const snap = await getDocs(query(collection(db, ...baseCol), orderBy('order', 'asc')));
     setSteps(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
 
   async function saveStep(s) {
-    if (!s.id) { alert('Please provide a step id (e.g., s7).'); return; }
-    const basePath = scopeKey === 'base'
-      ? ['onboarding', 'base', 'steps', s.id]
-      : ['onboarding', scopeKey, 'steps', s.id];
-
+    if (!s.id) { alert('Please provide a step id (e.g., s1).'); return; }
+    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', s.id] : ['onboarding', scopeKey, 'steps', s.id];
     await setDoc(doc(db, ...basePath), {
-      title: s.title || '',
-      summary: s.summary || '',
-      order: s.order || 0,
+      title: s.title || '', summary: s.summary || '', order: Number(s.order) || 0,
+      dueInDays: (s.dueInDays === '' || s.dueInDays === null) ? null : Number(s.dueInDays),
       tasks: Array.isArray(s.tasks) ? s.tasks : [],
     }, { merge: true });
 
     await refresh();
     setEditingStep(null);
-    setNewStep({ id: '', title: '', summary: '', order: (steps.length || 0) + 1, tasks: [] });
+    setNewStep({ id: '', title: '', summary: '', order: (steps.length || 0) + 1, dueInDays: null, tasks: [] });
   }
 
   async function deleteStep(stepId) {
     if (!confirm('Delete this step?')) return;
-    const basePath = scopeKey === 'base'
-      ? ['onboarding', 'base', 'steps', stepId]
-      : ['onboarding', scopeKey, 'steps', stepId];
+    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', stepId] : ['onboarding', scopeKey, 'steps', stepId];
     await deleteDoc(doc(db, ...basePath));
     setSteps(prev => prev.filter(s => s.id !== stepId));
   }
@@ -180,14 +212,12 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   async function renameStep(oldId, newId, payload) {
     if (oldId === newId) return saveStep(payload);
     if (!newId) { alert('New ID required.'); return; }
-    const baseCol = scopeKey === 'base'
-      ? ['onboarding', 'base', 'steps']
-      : ['onboarding', scopeKey, 'steps'];
+    const baseCol = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
 
     await setDoc(doc(db, ...baseCol, newId), {
-      title: payload.title || '',
-      summary: payload.summary || '',
-      order: payload.order || 0,
+      title: payload.title || '', summary: payload.summary || '',
+      order: Number(payload.order) || 0,
+      dueInDays: (payload.dueInDays === '' || payload.dueInDays === null) ? null : Number(payload.dueInDays),
       tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
     });
     await deleteDoc(doc(db, ...baseCol, oldId));
@@ -197,15 +227,49 @@ function ManageSteps({ scopeKey, scopeLabel }) {
 
   function openTasks(step) {
     setShowTasksFor(step.id);
-    setTaskDrafts(Array.isArray(step.tasks) ? step.tasks.map(t => ({ ...t })) : []);
+    const prepared = Array.isArray(step.tasks)
+      ? step.tasks.map((t) => ({
+          label: t.label || '',
+          type: t.type || 'page',
+          // normalize into "target"/"kind" for editing
+          target: t.target || t.route || t.url || t.videoUrl || t.courseId || '',
+          kind: t.kind || '',
+          requiresEvidence: !!t.requiresEvidence,
+          evidenceType: t.evidenceType || ''
+        }))
+      : [];
+    setTaskDrafts(prepared);
   }
-  async function saveTasks(step) {
-    const basePath = scopeKey === 'base'
-      ? ['onboarding', 'base', 'steps', step.id]
-      : ['onboarding', scopeKey, 'steps', step.id];
 
-    await updateDoc(doc(db, ...basePath), { tasks: taskDrafts });
-    setSteps(prev => prev.map(s => (s.id === step.id ? { ...s, tasks: taskDrafts } : s)));
+  function addTaskRow() {
+    setTaskDrafts(a => ([...a, { label: '', type: 'page', target: '', kind: '', requiresEvidence: false, evidenceType: '' }]));
+  }
+
+  function cleanTaskForSave(t) {
+    const base = { label: t.label || '', type: t.type || 'page' };
+    // form & upload store "kind"
+    if (t.type === 'upload' || t.type === 'form') {
+      return {
+        ...base,
+        kind: String(t.kind || '').trim(),
+        requiresEvidence: !!t.requiresEvidence,
+        evidenceType: t.evidenceType || ''
+      };
+    }
+    // others store "target"
+    return {
+      ...base,
+      target: String(t.target || '').trim(),
+      requiresEvidence: !!t.requiresEvidence,
+      evidenceType: t.evidenceType || ''
+    };
+  }
+
+  async function saveTasks(step) {
+    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', step.id] : ['onboarding', scopeKey, 'steps', step.id];
+    const cleaned = taskDrafts.map(cleanTaskForSave);
+    await updateDoc(doc(db, ...basePath), { tasks: cleaned });
+    setSteps(prev => prev.map(s => (s.id === step.id ? { ...s, tasks: cleaned } : s)));
     setShowTasksFor(null);
     setTaskDrafts([]);
   }
@@ -213,42 +277,49 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   return (
     <section className="w-full bg-white">
       <div className="max-w-6xl mx-auto px-6 py-8 text-black">
-        <h2 className="text-2xl font-bold mb-2">{scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}</h2>
+        <h2 className="text-2xl font-bold mb-2">
+          {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
+        </h2>
         <p className="text-black/70 mb-6">Manage onboarding steps and tasks.</p>
 
         <div className="rounded-xl border overflow-hidden">
           <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="font-semibold">{scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}</div>
+            <div className="font-semibold">
+              {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
+            </div>
           </div>
 
           {/* New step form */}
           <div className="px-4 py-3 border-b">
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-              <input placeholder="id (e.g. s7)" className="rounded-lg border px-3 py-2"
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <input placeholder="id (e.g. s1)" className="rounded-lg border px-3 py-2"
                      value={newStep.id} onChange={e => setNewStep(s => ({ ...s, id: e.target.value }))}/>
               <input placeholder="title" className="rounded-lg border px-3 py-2 md:col-span-2"
                      value={newStep.title} onChange={e => setNewStep(s => ({ ...s, title: e.target.value }))}/>
-              <input placeholder="description" className="rounded-lg border px-3 py-2 md:col-span-2"
+              <input placeholder="summary" className="rounded-lg border px-3 py-2 md:col-span-2"
                      value={newStep.summary} onChange={e => setNewStep(s => ({ ...s, summary: e.target.value }))}/>
               <input type="number" placeholder="order" className="rounded-lg border px-3 py-2"
                      value={newStep.order || 0} onChange={e => setNewStep(s => ({ ...s, order: Number(e.target.value) }))}/>
+              <input type="number" placeholder="dueInDays (optional)" className="rounded-lg border px-3 py-2"
+                     value={newStep.dueInDays ?? ''} onChange={e => setNewStep(s => ({ ...s, dueInDays: e.target.value }))}/>
             </div>
             <div className="mt-3 flex items-center gap-2">
               <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={() => saveStep(newStep)}>Add Step</button>
               <button className="px-3 py-1.5 rounded-lg border"
-                      onClick={() => setNewStep({ id: '', title: '', summary: '', order: (steps?.length || 0) + 1, tasks: [] })}>
+                      onClick={() => setNewStep({ id: '', title: '', summary: '', order: (steps?.length || 0) + 1, dueInDays: null, tasks: [] })}>
                 Clear
               </button>
             </div>
           </div>
 
-          {/* header */}
+          {/* header row */}
           <div className="grid grid-cols-12 gap-2 px-4 py-2 font-semibold bg-white border-b">
             <div className="col-span-2">ID</div>
             <div className="col-span-3">Title</div>
-            <div className="col-span-4">Description</div>
+            <div className="col-span-4">Summary</div>
             <div className="col-span-1">Order</div>
-            <div className="col-span-2 text-right">Actions</div>
+            <div className="col-span-1">Due±</div>
+            <div className="col-span-1 text-right">Actions</div>
           </div>
 
           {loading ? (
@@ -268,15 +339,15 @@ function ManageSteps({ scopeKey, scopeLabel }) {
                   </div>
                   <div className="col-span-3">
                     {isEditing ? (
-                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.title}
+                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.title || ''}
                              onChange={e => setEditingStep(prev => ({ ...prev, title: e.target.value }))}/>
-                    ) : (<span>{s.title}</span>)}
+                    ) : (<span>{s.title || ''}</span>)}
                   </div>
                   <div className="col-span-4">
                     {isEditing ? (
-                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.summary}
+                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.summary || ''}
                              onChange={e => setEditingStep(prev => ({ ...prev, summary: e.target.value }))}/>
-                    ) : (<span className="text-gray-600">{s.summary}</span>)}
+                    ) : (<span className="text-gray-600">{s.summary || ''}</span>)}
                   </div>
                   <div className="col-span-1">
                     {isEditing ? (
@@ -284,17 +355,24 @@ function ManageSteps({ scopeKey, scopeLabel }) {
                              onChange={e => setEditingStep(prev => ({ ...prev, order: Number(e.target.value) }))}/>
                     ) : (<span>{s.order || 0}</span>)}
                   </div>
-                  <div className="col-span-2 flex justify-end gap-2">
+                  <div className="col-span-1">
+                    {isEditing ? (
+                      <input type="number" className="rounded-lg border px-2 py-1 w-full" defaultValue={s.dueInDays ?? ''}
+                             onChange={e => setEditingStep(prev => ({ ...prev, dueInDays: e.target.value }))}/>
+                    ) : (<span>{(s.dueInDays ?? '') === '' || s.dueInDays === null ? '—' : s.dueInDays}</span>)}
+                  </div>
+                  <div className="col-span-1 flex justify-end gap-2">
                     {isEditing ? (
                       <>
                         <button className="px-3 py-1.5 rounded-lg bg-black text-white"
                                 onClick={() => {
                                   const payload = {
                                     id: editingStep.id, title: editingStep.title, summary: editingStep.summary,
-                                    order: editingStep.order, tasks: s.tasks || [],
+                                    order: editingStep.order, dueInDays: editingStep.dueInDays, tasks: s.tasks || [],
                                   };
-                                  if (editingStep.id !== s.id) { renameStep(s.id, editingStep.id, payload); }
-                                  else { saveStep(payload); }
+                                  if (editingStep.id !== s.id) {
+                                    renameStep(s.id, editingStep.id, payload);
+                                  } else { saveStep(payload); }
                                 }}>
                           Save
                         </button>
@@ -326,57 +404,85 @@ function ManageSteps({ scopeKey, scopeLabel }) {
                           </div>
                         </div>
 
-                        <div className="space-y-2">
+                        <div className="space-y-3">
                           {taskDrafts.map((t, idx) => (
-                            <div key={idx} className="grid grid-cols-12 gap-2">
-                              <input className="col-span-2 rounded-lg border px-2 py-1" placeholder="id (e.g. t1)"
-                                     value={t.id || ''} onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,id:e.target.value}:x))}/>
-                              <input className="col-span-3 rounded-lg border px-2 py-1" placeholder="label"
-                                     value={t.label || ''} onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,label:e.target.value}:x))}/>
-                              <select className="col-span-2 rounded-lg border px-2 py-1" value={t.type || 'page'}
-                                      onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,type:e.target.value}:x))}>
-                                <option value="page">page</option>
-                                <option value="course">course</option>
-                                <option value="doc">doc</option>
-                                <option value="video">video</option>
-                                <option value="upload">upload</option> 
+                            <div key={idx} className="grid grid-cols-12 gap-2 items-start">
+                              <select
+                                className="col-span-2 rounded-lg border px-2 py-1"
+                                value={t.type}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setTaskDrafts(a => a.map((x,i)=>{
+                                    if (i!==idx) return x;
+                                    if (val === 'upload' || val === 'form') {
+                                      return { ...x, type: val, kind: '', target: '' };
+                                    }
+                                    return { ...x, type: val, target: '', kind: '' };
+                                  }));
+                                }}
+                              >
+                                {TASK_TYPES.map(tp => <option key={tp} value={tp}>{tp}</option>)}
                               </select>
-                              {t.type === 'upload' ? (
-                                // simple "kind" input or dropdown so HR never types routes
-                                <input
+
+                              <input
+                                className="col-span-4 rounded-lg border px-2 py-1"
+                                placeholder="Task label"
+                                value={t.label}
+                                onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,label:e.target.value}:x))}
+                              />
+
+                              {(t.type === 'upload' || t.type === 'form') ? (
+                                <select
                                   className="col-span-3 rounded-lg border px-2 py-1"
-                                  placeholder="kind (e.g. personal_details, signed_contract, bank_info, id_tax)"
-                                  value={t.kind || ''}
-                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,kind:e.target.value.trim()}:x))}
-                                />
-                              ) : (t.type === 'page' || t.type === 'video' || t.type === 'doc') ? (
-                                <input
-                                  className="col-span-3 rounded-lg border px-2 py-1"
-                                  placeholder="route or url"
-                                  value={t.route || t.url || ''}
-                                  onChange={e => {
-                                    const v = e.target.value;
-                                    setTaskDrafts(a => a.map((x,i)=> i===idx
-                                      ? { ...x, route: t.type==='page'?v:undefined, url: t.type!=='page'?v:undefined }
-                                      : x));
-                                  }}
-                                />
+                                  value={t.kind}
+                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,kind:e.target.value}:x))}
+                                >
+                                  <option value="">— choose kind —</option>
+                                  {(t.type === 'upload' ? UPLOAD_KINDS : FORM_KINDS).map(k => (
+                                    <option key={k} value={k}>{k}</option>
+                                  ))}
+                                </select>
                               ) : (
                                 <input
                                   className="col-span-3 rounded-lg border px-2 py-1"
-                                  placeholder="courseId"
-                                  value={t.courseId || ''}
-                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,courseId:e.target.value}:x))}
+                                  placeholder={t.type === 'page' ? '/onboarding/policies' : 'https://... or courseId'}
+                                  value={t.target}
+                                  onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,target:e.target.value}:x))}
                                 />
                               )}
-                              <input className="col-span-2 rounded-lg border px-2 py-1" placeholder="completionKey (optional)"
-                                     value={t.completionKey || ''} onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,completionKey:e.target.value}:x))}/>
-                              <button className="col-span-12 md:col-span-0 px-3 py-1.5 rounded-lg border text-red-600"
-                                      onClick={() => setTaskDrafts(a => a.filter((_,i)=> i!==idx))}>Remove</button>
+
+                              <label className="col-span-2 inline-flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={!!t.requiresEvidence}
+                                  onChange={(e) => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,requiresEvidence:e.target.checked}:x))}
+                                />
+                                <span>Requires evidence</span>
+                              </label>
+
+                              <select
+                                className="col-span-1 rounded-lg border px-2 py-1"
+                                value={t.evidenceType || ''}
+                                onChange={e => setTaskDrafts(a => a.map((x,i)=> i===idx?{...x,evidenceType:e.target.value}:x))}
+                              >
+                                <option value="">—</option>
+                                <option value="file">file</option>
+                                <option value="form">form</option>
+                                <option value="quiz">quiz</option>
+                              </select>
+
+                              <button
+                                className="col-span-12 md:col-span-1 px-3 py-1.5 rounded-lg border text-red-600 md:justify-self-end"
+                                onClick={() => setTaskDrafts(a => a.filter((_,i)=> i!==idx))}
+                              >
+                                Remove
+                              </button>
                             </div>
                           ))}
-                          <button className="px-3 py-1.5 rounded-lg border"
-                                  onClick={() => setTaskDrafts(a => [...a, { id: '', label: '', type: 'page' }])}>+ Add Task</button>
+
+                          <button className="px-3 py-1.5 rounded-lg border" onClick={addTaskRow}>
+                            + Add Task
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -391,49 +497,43 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   );
 }
 
-/* -------------------- Progress tab (HR / Manager) -------------------- */
+/* --------------------------- Progress (HR/Mgr) -------------------------- */
 function unique(arr) { return Array.from(new Set(arr)); }
 
 async function expectedCompletionKeysForDept(deptId) {
-  // base steps
   const baseQ = query(collection(db, 'onboarding', 'base', 'steps'), orderBy('order', 'asc'));
-  const base = (await getDocs(baseQ)).docs.map(d => ({ id: d.id, ...d.data() }));
+  const general = (await getDocs(baseQ)).docs.map(d => ({ id: d.id, ...d.data() }));
 
-  // dept steps (optional)
   let dept = [];
   if (deptId) {
-    const deptQ = query(collection(db, 'onboarding', deptId, 'steps'), orderBy('order', 'asc'));
+    const deptQ = query(collection(db, 'onboarding', String(deptId), 'steps'), orderBy('order', 'asc'));
     dept = (await getDocs(deptQ)).docs.map(d => ({ id: d.id, ...d.data() }));
   }
 
-  // flatten tasks -> completion keys
-  const allSteps = [...base, ...dept];
+  const allSteps = [...general, ...dept];
   const keys = [];
   for (const s of allSteps) {
     if (!Array.isArray(s.tasks)) continue;
     s.tasks.forEach((t, idx) => {
-      const task = typeof t === 'string' ? { id: `t${idx}`, label: t, type: 'page' } : t;
-      const key = completionKeyForTask(task);
+      const key = completionKeyForTask(t, s.id, idx);
       if (key) keys.push(key);
     });
   }
   return unique(keys);
 }
 
-function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
+function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList }) {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [qText, setQText] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all'); // all | not-started | in-progress | done
+  const [statusFilter, setStatusFilter] = useState('all');
   const [deptFilter, setDeptFilter] = useState('all');
-  const [depts, setDepts] = useState([]);
-  const [showAttachmentsFor, setShowAttachmentsFor] = useState(null); 
+  const [showAttachmentsFor, setShowAttachmentsFor] = useState(null);
 
   useEffect(() => {
     async function run() {
       setLoading(true);
       try {
-        // 1) Load visible users
         let userQ = collection(db, 'users');
         if (viewerRole === ROLES.MANAGER && viewerDeptId) {
           userQ = query(userQ, where('departmentId', '==', viewerDeptId));
@@ -441,41 +541,33 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
         const usersSnap = await getDocs(userQ);
         const users = usersSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(u => u.role !== 'applicant' && u.id !== viewerUid); 
+          .filter((u) => u.role !== 'applicant' && u.id !== viewerUid);
 
-        // gather unique departments (for HR filter)
-        const deptSet = new Set(users.map(u => u.departmentId).filter(Boolean));
-        setDepts(Array.from(deptSet));
-
-        // 2) For each user, load their task ledger & compute progress
         const results = [];
         for (const u of users) {
-          // 1) expected keys from Steps (base + this user's dept)
           const expectedKeys = await expectedCompletionKeysForDept(u.departmentId);
 
-          // 2) user's ledger (done set)
           const tasksSnap = await getDocs(collection(db, 'userOnboarding', u.id, 'tasks'));
           const doneSet = new Set(
             tasksSnap.docs
-              .filter(d => (d.data()?.status === 'done'))
-              .map(d => d.id) // we store completion keys as doc IDs already
+              .filter(d => (d.data() || {}).status === 'done')
+              .map(d => d.id)
           );
 
-          // 3) compute progress against expected tasks
           const total = expectedKeys.length;
           const done = expectedKeys.filter(k => doneSet.has(k)).length;
           const pct = total ? Math.round((done / total) * 100) : 0;
 
           const lastUpdated = tasksSnap.docs.reduce((acc, d) => {
-            const t = d.data();
-            const ts = typeof t.updatedAt === 'number' ? t.updatedAt : (t.updatedAt?.toMillis?.() ?? 0);
+            const t = d.data() || {};
+            const ts = typeof t.updatedAt === 'number'
+              ? t.updatedAt
+              : (t.updatedAt && typeof t.updatedAt.toMillis === 'function' ? t.updatedAt.toMillis() : 0);
             return Math.max(acc, ts || 0);
           }, 0);
 
           const startMs = toMillis(u.startDate);
-          const dueAt =
-            toMillis(u.onboardingDueAt) ??
-            (startMs ? startMs + 14 * 86400000 : null);
+          const dueAt = toMillis(u.onboardingDueAt) ?? (startMs ? startMs + 14 * 86400000 : null);
 
           let status = 'Not started';
           if (done > 0 && done < total) status = 'In progress';
@@ -516,15 +608,13 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
   });
 
   const sorted = useMemo(() => {
-    const toKey = (v) =>
-      typeof v === 'number' && !Number.isNaN(v) ? v : Number.POSITIVE_INFINITY;
-
+    const toKey = (v) => (typeof v === 'number' && !Number.isNaN(v) ? v : Number.POSITIVE_INFINITY);
     return [...filtered].sort((a, b) => {
       const ad = toKey(a.dueAt);
       const bd = toKey(b.dueAt);
-      if (ad !== bd) return ad - bd;          // earlier due date first
-      if (a.pct !== b.pct) return a.pct - b.pct; // less complete first
-      return (a.lastUpdated || 0) - (b.lastUpdated || 0); // older activity first
+      if (ad !== bd) return ad - bd;
+      if (a.pct !== b.pct) return a.pct - b.pct;
+      return (a.lastUpdated || 0) - (b.lastUpdated || 0);
     });
   }, [filtered]);
 
@@ -543,10 +633,15 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
             <option value="done">Done</option>
           </select>
           {viewerRole === ROLES.HR && (
-            <select className="border rounded-lg px-3 py-2"
-                    value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
+            <select
+              className="border rounded-lg px-3 py-2"
+              value={deptFilter}
+              onChange={e => setDeptFilter(e.target.value)}
+            >
               <option value="all">All departments</option>
-              {depts.map(d => <option key={d} value={d}>{prettyDept(d) || d}</option>)}
+              {deptList.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
             </select>
           )}
         </div>
@@ -572,12 +667,6 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
                 <tr><td className="px-4 py-6 text-red-600" colSpan={8}>No employees match.</td></tr>
               ) : sorted.map(r => {
                 const dleft = daysLeft(r.dueAt);
-                // const dueBadge =
-                //   r.dueAt
-                //     ? (dleft < 0
-                //         ? <span className="text-red-700 bg-red-50 border border-red-200 rounded px-2 py-0.5">Overdue</span>
-                //         : <span className="text-gray-700 bg-gray-50 border border-gray-200 rounded px-2 py-0.5">{dleft}d left</span>)
-                //     : <span className="text-gray-400">—</span>;
                 const dueCell = r.dueAt
                   ? (dleft < 0
                       ? <span className="text-red-700 bg-red-50 border border-red-200 rounded px-2 py-0.5">
@@ -590,7 +679,7 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
                   <tr key={r.uid} className="border-b">
                     <td className="px-4 py-3">{r.name}</td>
                     <td className="px-4 py-3">{r.email}</td>
-                    <td className="px-4 py-3">{prettyDept(r.departmentId) || '—'}</td>
+                    <td className="px-4 py-3">{deptNameOf(r.departmentId, deptMap)}</td>
                     <td className="px-4 py-3">
                       <div className="w-40 bg-gray-100 rounded h-2 overflow-hidden">
                         <div className="bg-blue-500 h-2" style={{ width: `${r.pct}%` }} />
@@ -601,12 +690,9 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
                     <td className="px-4 py-3">{fmtDate(r.lastUpdated)}</td>
                     <td className="px-4 py-3">{dueCell}</td>
                     <td className="px-4 py-3 text-right">
-                    <button
-                      className="text-blue-600 hover:underline"
-                      onClick={() => setShowAttachmentsFor(r.uid)}
-                    >
-                      View
-                    </button>
+                      <button className="text-blue-600 hover:underline" onClick={() => setShowAttachmentsFor(r.uid)}>
+                        View
+                      </button>
                     </td>
                   </tr>
                 );
@@ -626,36 +712,45 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid }) {
   );
 }
 
-/* -------------------- Employee view with due badges -------------------- */
+/* ----------------------------- Employee view ---------------------------- */
 function EmployeeSteps({ user, userDoc }) {
   const [steps, setSteps] = useState([]);
   const [doneSet, setDoneSet] = useState(new Set());
   const [openIdx, setOpenIdx] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalTask, setModalTask] = useState(null);
+  const [modalKey, setModalKey] = useState(null);
+
   useEffect(() => {
     async function run() {
       if (!user) return;
       setLoading(true);
       try {
-        const deptKey = userDoc?.departmentId || null;
+        const deptKey = userDoc?.departmentId ?? null;
 
         const baseQ = query(collection(db, 'onboarding', 'base', 'steps'), orderBy('order', 'asc'));
-        const baseSteps = (await getDocs(baseQ)).docs.map(d => ({ id: d.id, ...d.data() }));
+        const baseSteps = (await getDocs(baseQ)).docs.map(d => ({ id: d.id, _scope: 'base', ...d.data() }));
 
         let deptSteps = [];
         if (deptKey) {
           const deptQ = query(collection(db, 'onboarding', deptKey, 'steps'), orderBy('order', 'asc'));
           const snap = await getDocs(deptQ);
-          deptSteps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          deptSteps = snap.docs.map(d => ({ id: d.id, _scope: 'dept', ...d.data() }));
         }
 
-        const merged = [...baseSteps, ...deptSteps].sort((a,b)=>(a.order||0)-(b.order||0));
-        setSteps(merged);
+        const sortedBase = [...baseSteps].sort((a,b)=>(a.order||0)-(b.order||0));
+        const sortedDept = [...deptSteps].sort((a,b)=>(a.order||0)-(b.order||0));
+        setSteps([...sortedBase, ...sortedDept]);
 
         const tasksSnap = await getDocs(collection(db, 'userOnboarding', user.uid, 'tasks'));
         const s = new Set();
-        tasksSnap.forEach(ds => { if (ds.data() && ds.data().status === 'done') s.add(ds.id); });
+        tasksSnap.forEach(ds => {
+          const data = ds.data() || {};
+          if (data.status === 'done') s.add(ds.id);
+        });
         setDoneSet(s);
       } finally {
         setLoading(false);
@@ -664,12 +759,50 @@ function EmployeeSteps({ user, userDoc }) {
     run();
   }, [user, userDoc?.departmentId]);
 
-  // due date for whole onboarding
   const startMs = toMillis(userDoc?.startDate);
   const dueMsFromField = toMillis(userDoc?.onboardingDueAt);
-  const overallDueMs = dueMsFromField ?? (startMs ? startMs + 14 * 86400000 : null);
+  const overallDueMs = (dueMsFromField != null ? dueMsFromField : (startMs ? startMs + 14 * 86400000 : null));
+  const dleft = daysLeft(overallDueMs);
 
-  const dleft = daysLeft(overallDueMs);  // returns null if overallDueMs is null/invalid
+  function openTaskModal(task, key) {
+    setModalTask(task);
+    setModalKey(key);
+    setModalOpen(true);
+  }
+  function markLocalDone(key) {
+    setDoneSet(prev => { const n = new Set(prev); n.add(key); return n; });
+  }
+  function unmarkLocalDone(key) {
+    setDoneSet(prev => { const n = new Set(prev); n.delete(key); return n; });
+  }
+
+  // --- Build per-step stats once, so we can gate correctly ---
+  const stepStats = useMemo(() => {
+    return steps.map((step, i) => {
+      const stepTasks = Array.isArray(step.tasks) ? step.tasks : [];
+      const keys = stepTasks
+        .map((t, tIdx) => completionKeyForTask(t, step.id || (step._scope === 'base' ? `base_${i}` : `dept_${i}`), tIdx))
+        .filter(Boolean);
+      const total = keys.length;
+      const done = keys.filter(k => doneSet.has(k)).length;
+      return { keys, total, done };
+    });
+  }, [steps, doneSet]);
+
+  const firstIncompleteStepIdx = useMemo(() => {
+    for (let i = 0; i < stepStats.length; i++) {
+      const { total, done } = stepStats[i];
+      // steps with 0 tasks don't block
+      if (total > 0 && done < total) return i;
+    }
+    return -1; // all complete
+  }, [stepStats]);
+
+  const Lock = ({ className = 'w-4 h-4 text-gray-400 mr-2' }) => (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7a5 5 0 00-5-5zm-3 8V7a3 3 0 116 0v3H9z" />
+    </svg>
+  );
 
   return (
     <section className="w-full bg-white">
@@ -697,81 +830,160 @@ function EmployeeSteps({ user, userDoc }) {
           <ol className="relative border-s border-black/70 mt-10">
             {steps.map((step, i) => {
               const isOpen = openIdx === i;
+
+              const stepTasks = Array.isArray(step.tasks) ? step.tasks : [];
+              const { keys: stepKeys, total: stepTotal, done: stepDone } =
+                stepStats[i] || { keys: [], total: 0, done: 0 };
+
+              // NEW: is this step fully complete?
+              const stepComplete = stepTotal > 0 && stepDone === stepTotal;
+
+              // Lock only steps AFTER the first incomplete step
+              const stepLocked = firstIncompleteStepIdx !== -1 && i > firstIncompleteStepIdx;
+
               return (
-                <li key={step.id || i}
+                <Fragment key={step.id || `${step._scope}_${i}`}>
+                  <li
                     className="mb-10 ms-6"
                     onMouseEnter={() => setOpenIdx(i)}
-                    onMouseLeave={() => setOpenIdx(null)}>
-                  <div className="absolute w-3 h-3 bg-black rounded-full mt-1.5 -start-1.5 border border-white" />
+                    onMouseLeave={() => setOpenIdx(null)}
+                  >
+                    {/* OPTIONAL: make the timeline dot green when the whole step is done */}
+                    <div
+                      className={`absolute w-3 h-3 rounded-full mt-1.5 -start-1.5 border border-white ${
+                        stepComplete ? 'bg-green-600' : 'bg-black'
+                      }`}
+                    />
 
-                  {step.summary && (<div className="mb-1 text-sm text-gray-600">{step.summary}</div>)}
-                  <button type="button" onClick={() => setOpenIdx(isOpen ? null : i)}
-                          className="text-lg font-semibold text-black hover:text-gray-700 transition text-left">
-                    {step.title || `Step ${i + 1}`}
-                  </button>
+                    {step.summary && (
+                      <div className="mb-1 text-sm text-gray-600">{step.summary}</div>
+                    )}
 
-                  {Array.isArray(step.tasks) && step.tasks.length > 0 && (
-                    <div className={`overflow-hidden grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
-                      isOpen ? 'grid-rows-[1fr] opacity-100 mt-3' : 'grid-rows-[0fr] opacity-0'}`}>
-                      <div className="min-h-0">
-                        <ul className="space-y-2">
-                          {step.tasks.map((task, tIdx) => {
-                            const t = typeof task === 'string' ? { id: `t${tIdx}`, label: task } : task;
-                            const route = routeForTask(t);
-                            const key = completionKeyForTask(t);
-                            const done = key ? doneSet.has(key) : false;
+                    <button
+                      type="button"
+                      onClick={() => setOpenIdx(isOpen ? null : i)}
+                      className="text-lg font-semibold text-black hover:text-gray-700 transition text-left flex items-center gap-2"
+                    >
+                      <span>{step.title || `Step ${i + 1}`}</span>
 
-                            const baseClasses = `flex items-center justify-between w-full rounded-lg border px-3 py-2 text-sm transition`;
-                            const colorClasses = done
-                              ? 'border-green-300 bg-green-50 hover:bg-green-100'
-                              : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50';
+                      {/* Department tag stays as-is */}
+                      {step._scope === 'dept' && (
+                        <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded border bg-[#BDE0FE] text-[#0f172a] border-[#BDE0FE]">
+                          Department
+                        </span>
+                      )}
 
-                            return (
-                              <li key={t.id || `t${tIdx}`}>
-                                {route ? (
-                                  <Link href={route} className={`${baseClasses} ${colorClasses}`}>
-                                    <span className="truncate">{t.label || `Task ${tIdx + 1}`}</span>
-                                    {done ? (
-                                      <span className="ml-3 inline-flex items-center gap-1 text-green-600 font-medium">
-                                        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-7.25 7.25a1 1 0 01-1.414 0L3.293 9.957a1 1 0 111.414-1.414l3.043 3.043 6.543-6.543a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                        Done
-                                      </span>
-                                    ) : (
-                                      <span className="ml-3 text-gray-400">Open</span>
-                                    )}
-                                  </Link>
-                                ) : (
-                                  <div className={`${baseClasses} ${colorClasses}`}>
-                                    <span className="truncate">{t.label || `Task ${tIdx + 1}`}</span>
-                                    <span className="ml-3 text-gray-300">No page</span>
-                                  </div>
-                                )}
-                              </li>
-                            );
-                          })}
-                        </ul>
+                      {/* EXISTING progress count */}
+                      {stepTotal > 0 && (
+                        <span className="text-sm font-normal text-gray-500">
+                          ({stepDone}/{stepTotal})
+                        </span>
+                      )}
+
+                      {/* NEW: completed-step indicator */}
+                      {stepComplete && (
+                        <span className="ml-2 text-xs font-medium px-2 py-0.5 rounded border bg-green-50 text-green-700 border-green-200">
+                          ✓ Done
+                        </span>
+                      )}
+                    </button>
+                    
+                    {stepTasks.length > 0 && (
+                      <div
+                        className={`overflow-hidden grid transition-[grid-template-rows,opacity] duration-300 ease-out ${
+                          isOpen ? 'grid-rows-[1fr] opacity-100 mt-3' : 'grid-rows-[0fr] opacity-0'
+                        }`}
+                      >
+                        <div className="min-h-0">
+                          <ul className="space-y-2">
+                            {stepTasks.map((t, tIdx) => {
+                              const key = stepKeys[tIdx];
+                              const done = key ? doneSet.has(key) : false;
+
+                              const isModalKind =
+                                (t.type === 'upload' && UPLOAD_KINDS.includes(t.kind)) ||
+                                (t.type === 'form'   && FORM_KINDS.includes(t.kind));
+
+                              const route = isModalKind ? null : routeForTask(t);
+
+                              // 👉 If this step is locked, only lock tasks that are NOT done
+                              const locked = stepLocked && !done;
+
+                              const base =
+                                'flex items-center justify-between w-full rounded-lg border px-3 py-2 text-sm transition';
+                              const unlockedColor = done
+                                ? 'border-green-300 bg-green-50 hover:bg-green-100 cursor-pointer'
+                                : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 cursor-pointer';
+                              const lockedColor =
+                                'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed';
+
+                              const content = (
+                                <>
+                                  <span className="truncate flex items-center">
+                                    {locked && <Lock />}
+                                    {t.label || `Task ${tIdx + 1}`}
+                                  </span>
+                                  {done && (
+                                    <span className="ml-3 inline-flex items-center gap-1 text-green-600 font-medium">
+                                      ✓ Done
+                                    </span>
+                                  )}
+                                </>
+                              );
+
+                              return (
+                                <li key={`${step.id || `${step._scope}_${i}`}-${tIdx}`}>
+                                  {locked ? (
+                                    <div className={`${base} ${lockedColor}`} title="Complete the previous step to unlock">
+                                      {content}
+                                    </div>
+                                  ) : route ? (
+                                    <Link href={route} className={`${base} ${unlockedColor}`}>
+                                      {content}
+                                    </Link>
+                                  ) : (
+                                    <button
+                                      className={`${base} ${unlockedColor} w-full text-left`}
+                                      onClick={() => openTaskModal(t, key)}
+                                    >
+                                      {content}
+                                    </button>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </li>
+                    )}
+                  </li>
+                </Fragment>
               );
             })}
           </ol>
         )}
       </div>
+
+      <TaskModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        userUid={user?.uid}
+        task={modalTask}
+        completionKey={modalKey}
+        onSaved={() => markLocalDone(modalKey)}
+        onDeleted={() => unmarkLocalDone(modalKey)}
+      />
     </section>
   );
 }
 
-/* -------------------- Main page (role-aware) -------------------- */
+/* -------------------------------- Main page ----------------------------- */
 export default function OnboardingPage() {
   const [user, setUser] = useState(null);
   const [userDoc, setUserDoc] = useState(undefined); // undefined = loading
+  const [tab, setTab] = useState('progress'); // 'progress' | 'tasks'
 
-  // local tab: 'progress' | 'tasks'
-  const [tab, setTab] = useState('progress');
+  const { deptMap, deptList } = useDepartments();
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
@@ -790,19 +1002,14 @@ export default function OnboardingPage() {
     return () => unsub();
   }, []);
 
-  if (userDoc === undefined) {
-    return <div className="max-w-6xl mx-auto px-6 py-10">Loading…</div>;
-  }
-  if (!user) {
-    return <div className="max-w-6xl mx-auto px-6 py-10">Please sign in.</div>;
-  }
+  if (userDoc === undefined) return <div className="max-w-6xl mx-auto px-6 py-10">Loading…</div>;
+  if (!user) return <div className="max-w-6xl mx-auto px-6 py-10">Please sign in.</div>;
 
-  const role = normalizeRole(userDoc?.role);
+  const role = normalizeRole(userDoc && userDoc.role);
   const isEmployee = role === ROLES.EMPLOYEE;
   const isHR = role === ROLES.HR;
   const isMgr = role === ROLES.MANAGER;
 
-  // Top hero for employees only
   const showHero = isEmployee;
 
   return (
@@ -814,7 +1021,7 @@ export default function OnboardingPage() {
         >
           <div className="absolute inset-0 bg-black/50" />
           <h1 className="relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
-            {userDoc?.name ? `Welcome onboard, ${userDoc.name}!` : 'Welcome onboard!'}
+            {userDoc && userDoc.name ? `Welcome onboard, ${userDoc.name}!` : 'Welcome onboard!'}
           </h1>
         </section>
       )}
@@ -832,25 +1039,26 @@ export default function OnboardingPage() {
               onClick={() => setTab('tasks')}
               className={`px-3 py-1.5 rounded-lg border ${tab==='tasks' ? 'bg-black text-white' : 'bg-white'}`}
             >
-              {isHR ? 'General Tasks' : 'Department Tasks'}
+              {isHR ? 'General Tasks' : `Department Tasks — ${deptNameOf(userDoc?.departmentId, deptMap)}`}
             </button>
           </div>
         )}
       </div>
 
-      {/* Content by tab/role */}
       {isEmployee ? (
         <EmployeeSteps user={user} userDoc={userDoc} />
       ) : tab === 'progress' ? (
         <ProgressTab
           viewerRole={role}
-          viewerDeptId={userDoc?.departmentId || null}
-          viewerUid={user?.uid}       
+          viewerDeptId={(userDoc && userDoc.departmentId) || null}
+          viewerUid={user && user.uid}
+          deptMap={deptMap}
+          deptList={deptList}
         />
       ) : (
         <ManageSteps
-          scopeKey={isHR ? 'base' : (userDoc?.departmentId || 'base')}
-          scopeLabel={isHR ? 'General' : (prettyDept(userDoc?.departmentId) || 'Department')}
+          scopeKey={isHR ? 'base' : ((userDoc && userDoc.departmentId) || 'base')}
+          scopeLabel={isHR ? 'General' : deptNameOf(userDoc && userDoc.departmentId, deptMap)}
         />
       )}
     </div>
