@@ -6,12 +6,32 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { ChartConfig, ChartContainer, ChartTooltip, ChartTooltipContent, } from "@/components/ui/chart"
+import { PolarAngleAxis, PolarGrid, Radar, RadarChart } from "recharts"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip"
+import { Info } from "lucide-react";
+import React from "react";
 
 export default function ApplicationsPage() {
   const [apps, setApps] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
+  const [screeningData, setScreeningData] = useState(null);
 
   const [filters, setFilters] = useState({
     department: "all",
@@ -140,6 +160,29 @@ export default function ApplicationsPage() {
     }
   };
 
+  useEffect(() => {
+    if (!detail) return;
+
+    const loadScreening = async () => {
+      try {
+        const q = query(
+          collection(db, "screening"),
+          orderBy("createdAt", "desc") // optional, if you have multiple
+        );
+        const snap = await getDocs(q);
+        const screening = snap.docs
+          .map(d => d.data())
+          .find(s => s.applicationId === detail.id);
+        setScreeningData(screening || null);
+      } catch (e) {
+        console.error("Failed to load screening data", e);
+        setScreeningData(null);
+      }
+    };
+
+    loadScreening();
+  }, [detail]);
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl text-[#2b99ff]">
@@ -239,21 +282,133 @@ export default function ApplicationsPage() {
         </table>
       </div>
 
-      {/* Details modal */}
+      {/* Score Report details */}
       <Dialog open={!!detail} onOpenChange={(o)=>!o && setDetail(null)}>
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Applicant details</DialogTitle>
+            <DialogTitle className={"font-bold"}>Candidate Report</DialogTitle>
           </DialogHeader>
-          {detail && (
-            <div className="space-y-2 text-sm">
-              <div className="font-medium">{detail.applicantName || detail.name || detail.applicantId}</div>
-              <div className="text-gray-600">{detail.applicantEmail || detail.email}</div>
-              <div className="text-gray-600 capitalize">Status: {detail.status}</div>
-              <div className="text-gray-600">Phone: {detail.phone || "-"}</div>
-              <div className="text-gray-600">Nationality: {detail.nationality || "-"}</div>
-              <div className="text-gray-600">Experience: {detail.yearOfExperience || detail.numOfYearExperience || "-"}</div>
-              <div className="text-gray-600">Job Id: {detail.jobId}</div>
+          {screeningData && (
+            <div className="space-y-4">
+              {/* Radar Chart for Final Score Breakdown */}
+              <Card>
+                <CardHeader className="items-center">
+                  <CardTitle>Score Breakdown</CardTitle>
+                  <CardDescription className={"text-xs italic"}>
+                    Breakdown of the applicant's skill match, resume relevance, and experience match.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pb-0">
+                  {/* Radar Chart */}
+                  <ChartContainer
+                    config={{
+                      Skill: { label: "Skill Match", color: "var(--chart-1)" },
+                      Resume: { label: "Resume Relevance", color: "var(--chart-2)" },
+                      Experience: { label: "Experience Match", color: "var(--chart-3)" },
+                    }}
+                    className="mx-auto aspect-square max-h-[250px]"
+                  >
+                    <RadarChart
+                      outerRadius={80}
+                      width={250}
+                      height={250}
+                      data={[
+                        { name: "Experience", value: screeningData.scoreBreakdown.experienceMatch },
+                        { name: "Resume", value: screeningData.scoreBreakdown.resumeRelevance },
+                        { name: "Skill", value: screeningData.scoreBreakdown.skillMatch },
+                      ]}
+                    >
+                      <PolarGrid gridType="circle" />
+                      <PolarAngleAxis dataKey="name" />
+                      <Radar
+                        dataKey="value"
+                        fill="#2B99FF"
+                        fillOpacity={0.6}
+                        dot={{ r: 4, fillOpacity: 1 }}
+                      />
+                    </RadarChart>
+                  </ChartContainer>
+                  {/* Score Breakdown Table */}
+                  <div className="grid grid-cols-1 gap-2 text-sm">
+                    {[
+                      { label: "Skill Match (60%)", value: screeningData.scoreBreakdown.skillMatch, color: "#CDB4DB" },
+                      { label: "Resume Relevance (30%)", value: screeningData.scoreBreakdown.resumeRelevance, color: "#A2D2FF" },
+                      { label: "Experience Match (10%)", value: screeningData.scoreBreakdown.experienceMatch, color: "#FFAFCC" },
+                      { label: "Total Score", value: screeningData.finalScore, color: "#2B99FF" },
+                    ].map((item) => (
+                      <div key={item.label} className="flex items-center gap-3">
+                        <span className="w-36 font-medium">
+                          {item.label}
+                          {item.label === "Total Score" && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Info className="text-gray-600 w-4 h-4 cursor-pointer" />
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black text-white text-xs">
+                                  Total score = 60% Skill Match + 30% Resume Relevance + 10% Experience Match
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </span>
+
+                        {/* Percentage bar flex */}
+                        <div className="flex-1 h-2 bg-gray-200 rounded relative">
+                          <div
+                            className="h-2 rounded"
+                            style={{ width: `${item.value ?? 0}%`, backgroundColor: item.color }}
+                          />
+                          <span className="absolute right-0 text-xs text-gray-700 ml-1">{Math.round(item.value)}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="items-center">
+                  <CardTitle>Skills Breakdown</CardTitle>
+                  <CardDescription className={"text-xs italic"}>
+                    Breakdown of the applicant's skills.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pb-0">
+                  {/* Matched Skills */}
+                  <h1 className="mb-2 font-semibold text-xs">Matched Skills (
+                  {screeningData?.matchedSkills?.length ?? 0}/
+                  {screeningData?.totalJobSkills ?? screeningData?.matchedSkills?.length ?? 0}
+                  ): </h1>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-center mx-10">
+                    <div className="font-semibold">Required Skill</div>
+                    <div className="font-semibold">Applicant Skill</div>
+                    {screeningData?.matchedSkills?.map((pair, idx) => (
+                      <React.Fragment key={idx}>
+                        <div className="px-2 py-1 font-medium rounded-full text-black bg-gray-200">{pair.jobSkill}</div>
+                        <div className="px-2 py-1 font-medium rounded-full text-white bg-[#2B99FF]">{pair.applicantSkill}</div>
+                      </React.Fragment>
+                    ))}
+                  </div>
+
+                  {/* Applicant Skills */}
+                  <h1 className="mb-2 mt-4 font-semibold text-xs">Applicant's skills: </h1>
+                  <div className="flex flex-wrap gap-2">
+                    {screeningData?.skillsExtracted?.map((skill, index) => {
+                      const colors = ["#CDB4DB", "#FFC8DD", "#BDE0FE"];
+                      const color = colors[index % colors.length];
+                      return (
+                        <span
+                          key={skill}
+                          className="px-2 py-1 rounded-full text-black text-xs font-medium"
+                          style={{ backgroundColor: color }}
+                        >
+                          {skill}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           )}
         </DialogContent>

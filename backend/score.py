@@ -2,24 +2,29 @@ from sentence_transformers import SentenceTransformer, util
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 
-# 1. Skill Match Score (focus on job requirements)
-def skill_match_score(job_skills, applicant_skills, threshold=0.6):
+# 1. Skill Match Score with matched pairs (focus on job requirements)
+def skill_match_score(job_skills, applicant_skills, threshold=0.65):
     if not job_skills:
-        return 1.0
+        return 1.0, []
 
     # Normalize
     job_skills = [s.strip().lower() for s in job_skills if s]
     applicant_skills = [s.strip().lower() for s in applicant_skills if s]
 
     matched = 0
+    matched_pairs = []  # store (job_skill, matched_applicant_skill)
+
     for js in job_skills:
         emb_js = model.encode(js, convert_to_tensor=True)
         emb_as = model.encode(applicant_skills, convert_to_tensor=True)
         sims = util.cos_sim(emb_js, emb_as)[0]  # similarity with all applicant skills
-        if float(sims.max()) >= threshold:
+        max_idx = int(sims.argmax())
+        if float(sims[max_idx]) >= threshold:
             matched += 1
+            matched_pairs.append((js, applicant_skills[max_idx]))
 
-    return matched / len(job_skills)
+    score = matched / len(job_skills)
+    return score, matched_pairs
 
 # 2. Resume Relevance (semantic similarity)
 def resume_relevance(job_desc, resume_text):
@@ -44,7 +49,7 @@ def experience_match(required, actual):
 
 # Final Score (50% skill match, 40% similarity, 10% year of experience)
 def calculate_applicant_score(job, applicant):
-    skill_score = skill_match_score(job.get("tags", []), applicant.get("skills", []))
+    skill_score, matched_skills = skill_match_score(job.get("tags", []), applicant.get("skills", []))
 
     sim_score = resume_relevance(job.get("description", ""), applicant.get("extracted_text", ""))
     exp_score = experience_match(job.get("numOfYearExperience"), applicant.get("yearOfExperience"))
@@ -59,5 +64,6 @@ def calculate_applicant_score(job, applicant):
         "skill_score": round(skill_score * 100, 2),
         "resume_relevance": round(sim_score * 100, 2),
         "experience_match": round(exp_score * 100, 2),
-        "final_score": round(final_score, 2)
+        "final_score": round(final_score, 2),
+        "matched_skills": matched_skills
     }

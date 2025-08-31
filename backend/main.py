@@ -68,17 +68,12 @@ async def apply(
 
     final_score = calculate_applicant_score(job, applicant)
 
-    # Breakdown
-    from score import skill_match_score, resume_relevance, experience_match
-    skill_score = skill_match_score(job["tags"], applicant["skills"])
-    resume_score = resume_relevance(job["description"], applicant["extracted_text"])
-    exp_score = experience_match(job["numOfYearExperience"], applicant["yearOfExperience"])
-
     return {
         "application_id": application_id,
         "skills_extracted": applicant_skills,
-        "skill_score": round(skill_score, 2),
-        "resume_score": round(resume_score, 2),
-        "experience_score": round(exp_score, 2),
-        "final_score": final_score
+        "skill_score": final_score["skill_score"],
+        "resume_score": final_score["resume_relevance"],
+        "experience_score": final_score["experience_match"],
+        "final_score": final_score["final_score"],
+        "matched_skills": final_score["matched_skills"]
     }

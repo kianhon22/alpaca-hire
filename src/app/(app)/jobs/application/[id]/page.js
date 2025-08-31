@@ -136,11 +136,17 @@ function JobApplication() {
       }
 
       const result = await response.json();
+      // Transform matched skills to array of objects
+      const matchedSkills = result.matched_skills.map(([jobSkill, applicantSkill]) => ({
+        jobSkill,
+        applicantSkill
+      }));
 
       // Save backend results into 'screening' collection
       await addDoc(collection(db, "screening"), {
         applicationId: appRef.id,
         skillsExtracted: result.skills_extracted,
+        matchedSkills: matchedSkills,
         scoreBreakdown: {
           skillMatch: result.skill_score,
           resumeRelevance: result.resume_score,
