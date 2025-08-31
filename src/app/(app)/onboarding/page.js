@@ -5,8 +5,9 @@ import Link from 'next/link';
 import { auth, db } from '@/lib/firebase';
 import {
   collection, doc, getDoc, getDocs, query, where, orderBy,
-  setDoc, updateDoc, deleteDoc
+  setDoc, updateDoc, deleteDoc, writeBatch
 } from 'firebase/firestore';
+
 import { onAuthStateChanged } from 'firebase/auth';
 import { Lock } from 'lucide-react';
 
@@ -156,6 +157,37 @@ const TASK_TYPES   = ['upload', 'page', 'link', 'video', 'course', 'form'];
 const UPLOAD_KINDS = ['signed_contract', 'id_tax'];
 const FORM_KINDS   = ['personal_details', 'bank_info'];
 
+// Next step ID: base => s1,s2... ; dept => <initials>-1,-2,...
+function computeNextId(steps, scopeKey) {
+  if (scopeKey === 'base') {
+    const maxN = steps.reduce((m, s) => {
+      const mch = String(s.id || '').match(/s(\d+)$/i);
+      return Math.max(m, mch ? parseInt(mch[1], 10) : 0);
+    }, 0);
+    return `s${maxN + 1}`;
+  }
+  const initials =
+    String(scopeKey)
+      .split(/[^a-z0-9]+/i)
+      .filter(Boolean)
+      .map(w => w[0])
+      .join('')
+      .slice(0, 3)
+      .toLowerCase() || 'd';
+  const maxN = steps.reduce((m, s) => {
+    const mch = String(s.id || '').match(/(\d+)$/);
+    return Math.max(m, mch ? parseInt(mch[1], 10) : 0);
+  }, 0);
+  return `${initials}-${maxN + 1}`;
+}
+
+// Next order number = max(existing) + 1
+function computeNextOrder(steps) {
+  return steps.length
+    ? Math.max(...steps.map(s => Number(s.order) || 0)) + 1
+    : 1;
+}
+
 function ManageSteps({ scopeKey, scopeLabel }) {
   const [steps, setSteps] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -164,47 +196,104 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   const [showTasksFor, setShowTasksFor] = useState(null);
   const [taskDrafts, setTaskDrafts] = useState([]);
 
-  const [newStep, setNewStep] = useState({ id: '', title: '', summary: '', order: 1, dueInDays: null, tasks: [] });
+  const [newStep, setNewStep] = useState({ title: '', summary: '', tasks: [] });
+  const [reorderMode, setReorderMode] = useState(false);
+  const [draftSteps, setDraftSteps] = useState([]);   // local copy for drag UI
+  const [dragIdx, setDragIdx] = useState(null);
+
+  function moveItem(arr, from, to) {
+    const next = [...arr];
+    const [m] = next.splice(from, 1);
+    next.splice(to, 0, m);
+    return next;
+  }
+
+  function baseColForScope() {
+    return scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps']
+      : ['onboarding', scopeKey, 'steps'];
+  }
+
+  async function saveOrder() {
+    const batch = writeBatch(db);
+    const col = baseColForScope();
+    draftSteps.forEach((s, i) => {
+      batch.update(doc(db, ...col, s.id), { order: i + 1 });
+    });
+    await batch.commit();
+    setSteps(draftSteps.map((s, i) => ({ ...s, order: i + 1 })));
+    setReorderMode(false);
+    setDraftSteps([]);
+  }
 
   useEffect(() => {
     async function load() {
       if (!scopeKey) return;
       setLoading(true);
       try {
-        const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
-        const qy = query(collection(db, ...basePath), orderBy('order', 'asc'));
-        const snap = await getDocs(qy);
+        const basePath = scopeKey === 'base'
+          ? ['onboarding', 'base', 'steps']
+          : ['onboarding', scopeKey, 'steps'];
+        const snap = await getDocs(query(collection(db, ...basePath), orderBy('order', 'asc')));
         const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         setSteps(rows);
-        setNewStep(s => ({ ...s, order: (rows?.length || 0) + 1 }));
-      } finally { setLoading(false); }
+      } finally {
+        setLoading(false);
+      }
     }
     load();
   }, [scopeKey]);
 
   async function refresh() {
-    const baseCol = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
+    const baseCol = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps']
+      : ['onboarding', scopeKey, 'steps'];
     const snap = await getDocs(query(collection(db, ...baseCol), orderBy('order', 'asc')));
     setSteps(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }
 
-  async function saveStep(s) {
-    if (!s.id) { alert('Please provide a step id (e.g., s1).'); return; }
-    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', s.id] : ['onboarding', scopeKey, 'steps', s.id];
-    await setDoc(doc(db, ...basePath), {
-      title: s.title || '', summary: s.summary || '', order: Number(s.order) || 0,
-      dueInDays: (s.dueInDays === '' || s.dueInDays === null) ? null : Number(s.dueInDays),
-      tasks: Array.isArray(s.tasks) ? s.tasks : [],
+  // ADD (auto id + auto order)
+  async function addStep() {
+    const basePath = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps']
+      : ['onboarding', scopeKey, 'steps'];
+    const id = computeNextId(steps, scopeKey);
+    const order = computeNextOrder(steps);
+
+    await setDoc(doc(db, ...basePath, id), {
+      title: newStep.title || '',
+      summary: newStep.summary || '',
+      order,
+      tasks: Array.isArray(newStep.tasks) ? newStep.tasks : [],
     }, { merge: true });
 
     await refresh();
     setEditingStep(null);
-    setNewStep({ id: '', title: '', summary: '', order: (steps.length || 0) + 1, dueInDays: null, tasks: [] });
+    setNewStep({ title: '', summary: '', tasks: [] });
+  }
+
+  async function saveStep(payload) {
+    if (!payload.id) { alert('Step id is missing.'); return; }
+    const basePath = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps', payload.id]
+      : ['onboarding', scopeKey, 'steps', payload.id];
+    await setDoc(doc(db, ...basePath), {
+      title: payload.title || '',
+      summary: payload.summary || '',
+      // keep existing order as-is
+      order: Number(payload.order) || 0,
+      tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
+    }, { merge: true });
+
+    await refresh();
+    setEditingStep(null);
   }
 
   async function deleteStep(stepId) {
     if (!confirm('Delete this step?')) return;
-    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', stepId] : ['onboarding', scopeKey, 'steps', stepId];
+    const basePath = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps', stepId]
+      : ['onboarding', scopeKey, 'steps', stepId];
     await deleteDoc(doc(db, ...basePath));
     setSteps(prev => prev.filter(s => s.id !== stepId));
   }
@@ -212,12 +301,14 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   async function renameStep(oldId, newId, payload) {
     if (oldId === newId) return saveStep(payload);
     if (!newId) { alert('New ID required.'); return; }
-    const baseCol = scopeKey === 'base' ? ['onboarding', 'base', 'steps'] : ['onboarding', scopeKey, 'steps'];
+    const baseCol = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps']
+      : ['onboarding', scopeKey, 'steps'];
 
     await setDoc(doc(db, ...baseCol, newId), {
-      title: payload.title || '', summary: payload.summary || '',
+      title: payload.title || '',
+      summary: payload.summary || '',
       order: Number(payload.order) || 0,
-      dueInDays: (payload.dueInDays === '' || payload.dueInDays === null) ? null : Number(payload.dueInDays),
       tasks: Array.isArray(payload.tasks) ? payload.tasks : [],
     });
     await deleteDoc(doc(db, ...baseCol, oldId));
@@ -231,7 +322,6 @@ function ManageSteps({ scopeKey, scopeLabel }) {
       ? step.tasks.map((t) => ({
           label: t.label || '',
           type: t.type || 'page',
-          // normalize into "target"/"kind" for editing
           target: t.target || t.route || t.url || t.videoUrl || t.courseId || '',
           kind: t.kind || '',
           requiresEvidence: !!t.requiresEvidence,
@@ -247,26 +337,16 @@ function ManageSteps({ scopeKey, scopeLabel }) {
 
   function cleanTaskForSave(t) {
     const base = { label: t.label || '', type: t.type || 'page' };
-    // form & upload store "kind"
     if (t.type === 'upload' || t.type === 'form') {
-      return {
-        ...base,
-        kind: String(t.kind || '').trim(),
-        requiresEvidence: !!t.requiresEvidence,
-        evidenceType: t.evidenceType || ''
-      };
+      return { ...base, kind: String(t.kind || '').trim(), requiresEvidence: !!t.requiresEvidence, evidenceType: t.evidenceType || '' };
     }
-    // others store "target"
-    return {
-      ...base,
-      target: String(t.target || '').trim(),
-      requiresEvidence: !!t.requiresEvidence,
-      evidenceType: t.evidenceType || ''
-    };
+    return { ...base, target: String(t.target || '').trim(), requiresEvidence: !!t.requiresEvidence, evidenceType: t.evidenceType || '' };
   }
 
   async function saveTasks(step) {
-    const basePath = scopeKey === 'base' ? ['onboarding', 'base', 'steps', step.id] : ['onboarding', scopeKey, 'steps', step.id];
+    const basePath = scopeKey === 'base'
+      ? ['onboarding', 'base', 'steps', step.id]
+      : ['onboarding', scopeKey, 'steps', step.id];
     const cleaned = taskDrafts.map(cleanTaskForSave);
     await updateDoc(doc(db, ...basePath), { tasks: cleaned });
     setSteps(prev => prev.map(s => (s.id === step.id ? { ...s, tasks: cleaned } : s)));
@@ -276,50 +356,75 @@ function ManageSteps({ scopeKey, scopeLabel }) {
 
   return (
     <section className="w-full bg-white">
-      <div className="max-w-6xl mx-auto px-6 py-8 text-black">
+      <div className="max-w-6xl mx-auto px-6 py-1 text-black">
         <h2 className="text-2xl font-bold mb-2">
           {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
         </h2>
         <p className="text-black/70 mb-6">Manage onboarding steps and tasks.</p>
 
         <div className="rounded-xl border overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
-            <div className="font-semibold">
-              {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
-            </div>
+        <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
+           <div className="font-semibold">
+             {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
           </div>
+           <div className="flex items-center gap-2">
+             {!reorderMode ? (
+               <button
+                 className="px-3 py-1.5 rounded-lg border"
+                 onClick={() => { setReorderMode(true); setDraftSteps(steps); }}
+               >
+                 Reorder
+               </button>
+             ) : (
+               <>
+                 <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={saveOrder}>
+                   Save order
+                 </button>
+                 <button
+                   className="px-3 py-1.5 rounded-lg border"
+                   onClick={() => { setReorderMode(false); setDraftSteps([]); }}
+                 >
+                   Cancel
+                 </button>
+               </>
+             )}
+           </div>
+         </div>
 
-          {/* New step form */}
+          {/* New step form: only Title & Summary (ID & Order are auto) */}
           <div className="px-4 py-3 border-b">
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-              <input placeholder="id (e.g. s1)" className="rounded-lg border px-3 py-2"
-                     value={newStep.id} onChange={e => setNewStep(s => ({ ...s, id: e.target.value }))}/>
-              <input placeholder="title" className="rounded-lg border px-3 py-2 md:col-span-2"
-                     value={newStep.title} onChange={e => setNewStep(s => ({ ...s, title: e.target.value }))}/>
-              <input placeholder="summary" className="rounded-lg border px-3 py-2 md:col-span-2"
-                     value={newStep.summary} onChange={e => setNewStep(s => ({ ...s, summary: e.target.value }))}/>
-              <input type="number" placeholder="order" className="rounded-lg border px-3 py-2"
-                     value={newStep.order || 0} onChange={e => setNewStep(s => ({ ...s, order: Number(e.target.value) }))}/>
-              <input type="number" placeholder="dueInDays (optional)" className="rounded-lg border px-3 py-2"
-                     value={newStep.dueInDays ?? ''} onChange={e => setNewStep(s => ({ ...s, dueInDays: e.target.value }))}/>
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+              <input
+                placeholder="title"
+                className="rounded-lg border px-3 py-2 md:col-span-2"
+                value={newStep.title}
+                onChange={e => setNewStep(s => ({ ...s, title: e.target.value }))}
+              />
+              <input
+                placeholder="summary"
+                className="rounded-lg border px-3 py-2 md:col-span-3"
+                value={newStep.summary}
+                onChange={e => setNewStep(s => ({ ...s, summary: e.target.value }))}
+              />
             </div>
             <div className="mt-3 flex items-center gap-2">
-              <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={() => saveStep(newStep)}>Add Step</button>
-              <button className="px-3 py-1.5 rounded-lg border"
-                      onClick={() => setNewStep({ id: '', title: '', summary: '', order: (steps?.length || 0) + 1, dueInDays: null, tasks: [] })}>
+              <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={addStep}>
+                Add Step
+              </button>
+              <button
+                className="px-3 py-1.5 rounded-lg border"
+                onClick={() => setNewStep({ title: '', summary: '', tasks: [] })}
+              >
                 Clear
               </button>
             </div>
           </div>
 
-          {/* header row */}
           <div className="grid grid-cols-12 gap-2 px-4 py-2 font-semibold bg-white border-b">
-            <div className="col-span-2">ID</div>
+            <div className="col-span-1">ID</div>
             <div className="col-span-3">Title</div>
-            <div className="col-span-4">Summary</div>
-            <div className="col-span-1">Order</div>
-            <div className="col-span-1">Due±</div>
-            <div className="col-span-1 text-right">Action</div>
+            <div className="col-span-5">Summary</div>
+            <div className="col-span-3 text-right">Action</div>
           </div>
 
           {loading ? (
@@ -327,68 +432,117 @@ function ManageSteps({ scopeKey, scopeLabel }) {
           ) : steps.length === 0 ? (
             <div className="px-4 py-8 text-red-600">No steps yet.</div>
           ) : (
-            steps.map(s => {
+            (reorderMode ? draftSteps : steps).map((s, index) => {
               const isEditing = editingStep && editingStep._originalId === s.id;
               return (
-                <div key={s.id} className="grid grid-cols-12 gap-2 px-4 py-2 items-center border-b">
-                  <div className="col-span-2">
+                <div
+                  key={s.id}
+                  className={`grid grid-cols-12 gap-2 px-4 py-2 items-center border-b ${reorderMode ? 'cursor-grab bg-amber-50/10' : ''}`}
+                  draggable={reorderMode}
+                  onDragStart={(e) => { setDragIdx(index); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIdx === null || dragIdx === index) return;
+                    setDraftSteps(prev => moveItem(prev, dragIdx, index));
+                    setDragIdx(null);
+                  }}
+                >
+                  <div className="col-span-1">
                     {isEditing ? (
-                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.id}
-                             onChange={e => setEditingStep(prev => ({ ...prev, id: e.target.value }))}/>
+                      <input
+                        className="rounded-lg border px-2 py-1 w-full"
+                        defaultValue={s.id}
+                        onChange={e => setEditingStep(prev => ({ ...prev, id: e.target.value }))}
+                      />
                     ) : (<span className="font-mono">{s.id}</span>)}
                   </div>
+
                   <div className="col-span-3">
                     {isEditing ? (
-                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.title || ''}
-                             onChange={e => setEditingStep(prev => ({ ...prev, title: e.target.value }))}/>
+                      <input
+                        className="rounded-lg border px-2 py-1 w-full"
+                        defaultValue={s.title || ''}
+                        onChange={e => setEditingStep(prev => ({ ...prev, title: e.target.value }))}
+                      />
                     ) : (<span>{s.title || ''}</span>)}
                   </div>
-                  <div className="col-span-4">
+
+                  <div className="col-span-5">
                     {isEditing ? (
-                      <input className="rounded-lg border px-2 py-1 w-full" defaultValue={s.summary || ''}
-                             onChange={e => setEditingStep(prev => ({ ...prev, summary: e.target.value }))}/>
+                      <input
+                        className="rounded-lg border px-2 py-1 w-full"
+                        defaultValue={s.summary || ''}
+                        onChange={e => setEditingStep(prev => ({ ...prev, summary: e.target.value }))}
+                      />
                     ) : (<span className="text-gray-600">{s.summary || ''}</span>)}
                   </div>
-                  <div className="col-span-1">
-                    {isEditing ? (
-                      <input type="number" className="rounded-lg border px-2 py-1 w-full" defaultValue={s.order || 0}
-                             onChange={e => setEditingStep(prev => ({ ...prev, order: Number(e.target.value) }))}/>
-                    ) : (<span>{s.order || 0}</span>)}
-                  </div>
-                  <div className="col-span-1">
-                    {isEditing ? (
-                      <input type="number" className="rounded-lg border px-2 py-1 w-full" defaultValue={s.dueInDays ?? ''}
-                             onChange={e => setEditingStep(prev => ({ ...prev, dueInDays: e.target.value }))}/>
-                    ) : (<span>{(s.dueInDays ?? '') === '' || s.dueInDays === null ? '—' : s.dueInDays}</span>)}
-                  </div>
-                  <div className="col-span-1 flex justify-end gap-2">
-                    {isEditing ? (
-                      <>
-                        <button className="px-3 py-1.5 rounded-lg bg-black text-white"
-                                onClick={() => {
-                                  const payload = {
-                                    id: editingStep.id, title: editingStep.title, summary: editingStep.summary,
-                                    order: editingStep.order, dueInDays: editingStep.dueInDays, tasks: s.tasks || [],
-                                  };
-                                  if (editingStep.id !== s.id) {
-                                    renameStep(s.id, editingStep.id, payload);
-                                  } else { saveStep(payload); }
-                                }}>
-                          Save
-                        </button>
-                        <button className="px-3 py-1.5 rounded-lg border" onClick={() => setEditingStep(null)}>Cancel</button>
-                      </>
-                    ) : (
-                      <>
-                        <button className="px-3 py-1.5 rounded-lg border"
-                                onClick={() => setEditingStep({ _originalId: s.id, ...s })}>Edit</button>
-                        <button className="px-3 py-1.5 rounded-lg border" onClick={() => openTasks(s)}>Tasks</button>
-                        <button className="px-3 py-1.5 rounded-lg border text-red-600"
-                                onClick={() => deleteStep(s.id)}>Delete</button>
-                      </>
-                    )}
-                  </div>
 
+                 <div className="col-span-3 flex justify-end gap-2 flex-nowrap">
+                  {reorderMode ? (
+                    // Reorder mode: disable row actions and show a hint
+                    <span className="text-sm text-gray-500">Drag row to reorder</span>
+                  ) : isEditing ? (
+                    // Editing this row: show Save / Cancel
+                    <>
+                      <button
+                        className="px-3 py-1.5 rounded-lg bg-black text-white"
+                        onClick={() => {
+                          // merge edits with original row so untouched fields stay the same
+                          const payload = {
+                            id: (editingStep.id ?? s.id).trim(),
+                            title: editingStep.title ?? s.title ?? '',
+                            summary: editingStep.summary ?? s.summary ?? '',
+                            order: s.order ?? 0,          // keep existing order
+                            tasks: s.tasks || [],
+                          };
+
+                          if (payload.id !== s.id) {
+                            // user changed ID -> rename doc
+                            renameStep(s.id, payload.id, payload);
+                          } else {
+                            // normal save
+                            saveStep(payload);
+                          }
+                        }}
+                      >
+                        Save
+                      </button>
+
+                      <button
+                        className="px-3 py-1.5 rounded-lg border"
+                        onClick={() => setEditingStep(null)}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    // Normal mode: standard actions
+                    <>
+                      <button
+                        className="px-3 py-1.5 rounded-lg border"
+                        onClick={() => setEditingStep({ _originalId: s.id, ...s })}
+                        disabled={reorderMode}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="px-3 py-1.5 rounded-lg border"
+                        onClick={() => openTasks(s)}
+                        disabled={reorderMode}
+                      >
+                        Tasks
+                      </button>
+                      <button
+                        className="px-3 py-1.5 rounded-lg border text-red-600"
+                        onClick={() => deleteStep(s.id)}
+                        disabled={reorderMode}
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
                   {/* tasks editor */}
                   {showTasksFor === s.id && (
                     <div className="col-span-12 mt-3">
@@ -399,14 +553,32 @@ function ManageSteps({ scopeKey, scopeLabel }) {
                             <button className="px-3 py-1.5 rounded-lg bg-black text-white" onClick={() => saveTasks(s)}>
                               Save Tasks
                             </button>
-                            <button className="px-3 py-1.5 rounded-lg border"
-                                    onClick={() => { setShowTasksFor(null); setTaskDrafts([]); }}>Close</button>
+                            <button
+                              className="px-3 py-1.5 rounded-lg border"
+                              onClick={() => { setShowTasksFor(null); setTaskDrafts([]); }}
+                            >
+                              Close
+                            </button>
                           </div>
                         </div>
 
                         <div className="space-y-3">
                           {taskDrafts.map((t, idx) => (
-                            <div key={idx} className="grid grid-cols-12 gap-2 items-start">
+                            <div
+                              key={idx}
+                              className="grid grid-cols-12 gap-2 items-start cursor-grab"
+                              draggable
+                              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; (e.currentTarget)._dragIndex = idx; }}
+                              onDragOver={(e) => e.preventDefault()}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                const from = (e.currentTarget)._dragIndex ?? Number((e.dataTransfer).getData('text/plain'));
+                                const to = idx;
+                                if (Number.isInteger(from) && from !== to) {
+                                  setTaskDrafts(prev => moveItem(prev, from, to));
+                                }
+                              }}
+                            >
                               <select
                                 className="col-span-2 rounded-lg border px-2 py-1"
                                 value={t.type}
@@ -620,7 +792,7 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList })
 
   return (
     <section className="w-full bg-white">
-      <div className="max-w-6xl mx-auto px-6 py-8 text-black">
+      <div className="max-w-6xl mx-auto px-6 py-1 text-black">
         <h2 className="text-2xl font-bold mb-2">Onboarding Progress</h2>
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <input className="border rounded-lg px-3 py-2 w-64" placeholder="Search name or email"
