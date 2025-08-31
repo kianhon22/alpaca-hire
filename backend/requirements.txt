@@ -4,7 +4,7 @@ pdfplumber
 spacy
 skillNer
 ipython
-google-cloud-firestore>=2.14.0
 sentence_transformers
 dotenv
+google-cloud-firestore>=2.14.0
 https://github.com/explosion/spacy-models/releases/download/en_core_web_lg-3.8.0/en_core_web_lg-3.8.0-py3-none-any.whl
