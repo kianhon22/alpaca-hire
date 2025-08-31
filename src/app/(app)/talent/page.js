@@ -93,12 +93,22 @@ export default function TalentPage() {
         let closed = 0;
         const allJobs = [];
 
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          allJobs.push({ id: doc.id, ...data });
-          if (data.status === "open") active++;
-          if (data.status === "closed") closed++;
-        });
+        for (const docSnap of querySnapshot.docs) {
+          const jobData = { id: docSnap.id, ...docSnap.data() };
+          if (jobData.status === "open") active++;
+          if (jobData.status === "closed") closed++;
+
+          // Count applications for this job
+          const appsSnap = await getDocs(
+            query(collection(db, "applications"), where("jobId", "==", docSnap.id))
+          );
+          const applications = appsSnap.docs.map(d => d.data());
+
+          jobData.applicantsCount = applications.length;
+          jobData.recruitedCount = applications.filter(a => a.status === "accepted").length;
+
+          allJobs.push(jobData);
+        }
 
         setJobs(allJobs);
         setActiveCount(active);

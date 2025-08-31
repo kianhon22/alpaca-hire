@@ -5,7 +5,8 @@ import React, { useState, useEffect } from 'react'
 import { auth, db } from '@/lib/firebase'
 import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore"
 import { onAuthStateChanged } from "firebase/auth"
-import { Award, FileText, MessagesSquare, UserRoundPen } from 'lucide-react'
+import { Award, Check, FileClock, FileText, MessagesSquare, UserRoundPen, X } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 
 function ApplicantDashboard() {
@@ -13,6 +14,7 @@ function ApplicantDashboard() {
     const [applications, setApplications] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
+    const [openDialogAppId, setOpenDialogAppId] = useState(null)
   
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -58,14 +60,31 @@ function ApplicantDashboard() {
     // Stage order
     const stages = [
         { key: "applied", label: "Applied", icon: FileText },
-        { key: "review", label: "Review", icon: UserRoundPen },
-        { key: "iv", label: "Interview", icon: MessagesSquare },
+        { key: "reviewing", label: "Reviewing", icon: UserRoundPen },
+        { key: "scheduled", label: "Interview", icon: MessagesSquare },
+        { key: "processing", label: "Processing", icon:  FileClock},
         { key: "result", label: "Result", icon: Award },
     ]
+
+    const getStageDisplay = (app) => {
+        if (app.status === "accepted") return { label: "Accepted", Icon: Check }
+        if (app.status === "rejected") return { label: "Rejected", Icon: X }
+        return { label: "Result", Icon: Award }
+    }
 
     const getStageIndex = (status) => {
         const index = stages.findIndex((s) => s.key === status)
         return index === -1 ? 0 : index
+    }
+
+    // Helper function to check if a stage/connector should be active
+    const isStageActive = (idx, currentStage, status) => {
+        // For accepted/rejected, all stages and connectors should be active
+        if (status === "accepted" || status === "rejected") {
+            return true
+        }
+        // Otherwise, use normal logic
+        return idx <= currentStage
     }
 
     const filteredApps = applications.filter(
@@ -116,43 +135,81 @@ function ApplicantDashboard() {
 
                 <div className="flex justify-between items-center mt-6 relative mx-50">
                     {stages.map((stage, idx) => {
-                        const Icon = stage.icon
-                        const isActive = idx <= currentStage
+                        let Icon = stage.icon
+                        let label = stage.label
 
+                        // Override final stage if needed
+                        if (stage.key === "result") {
+                            const finalStage = getStageDisplay(app)
+                            Icon = finalStage.Icon
+                            label = finalStage.label
+                        }
+
+                        const isActive = isStageActive(idx, currentStage, app.status)
+
+                        // Determine colors based on final status for the result stage
+                        let stageColors = {
+                            active: "bg-blue-500 border-blue-500 text-white",
+                            inactive: "bg-white border-gray-300 text-gray-400",
+                            textActive: "text-blue-600 font-medium",
+                            textInactive: "text-gray-400",
+                            connector: "bg-blue-500"
+                        }
+                        
+                        if (stage.key === "result" && (app.status === "accepted" || app.status === "rejected")) {
+                            if (app.status === "accepted") {
+                                stageColors = {
+                                    active: "bg-green-500 border-green-500 text-white",
+                                    inactive: "bg-white border-gray-300 text-gray-400",
+                                    textActive: "text-green-600 font-medium",
+                                    textInactive: "text-gray-400",
+                                    connector: "bg-blue-500"
+                                }
+                            } else if (app.status === "rejected") {
+                                stageColors = {
+                                    active: "bg-red-500 border-red-500 text-white",
+                                    inactive: "bg-white border-gray-300 text-gray-400",
+                                    textActive: "text-red-600 font-medium",
+                                    textInactive: "text-gray-400",
+                                    connector: "bg-blue-500"
+                                }
+                            }
+                        }
+
+                        const isScheduledStage = stage.key === "scheduled"
+                        
                         return (
-                        <div
-                            key={stage.key}
-                            className="flex flex-col items-center text-xs w-1/4 relative z-10 pb-4"
-                        >
-                            <div
-                            className={`flex items-center justify-center w-8 h-8 rounded-full border-2 ${
-                                isActive
-                                ? "bg-blue-500 border-blue-500 text-white"
-                                : "bg-white border-gray-300 text-gray-400"
-                            }`}
-                            >
-                            <Icon size={16} />
-                            </div>
-                            <span
-                            className={`mt-2 ${
-                                isActive ? "text-blue-600 font-medium" : "text-gray-400"
-                            }`}
-                            >
-                            {stage.label}
-                            </span>
+                            <div key={stage.key} className="flex flex-col items-center text-xs w-1/4 relative z-10 pb-4">
+                                <div
+                                    onClick={() => isScheduledStage && setOpenDialogAppId(app.id)}
+                                    className={`flex items-center justify-center w-8 h-8 rounded-full border ${isActive ? stageColors.active : stageColors.inactive} ${isScheduledStage ? "cursor-pointer hover:scale-110 hover:shadow-lg transition-transform duration-200" : ""}`}
+                                >
+                                    <Icon size={16} />
+                                </div>
+                                <span className={`mt-2 ${isActive ? stageColors.textActive : stageColors.textInactive}`}>
+                                    {label}
+                                </span>
 
-                            {/* Connector line BELOW text */}
-                            {idx !== 0 && (
-                            <div
-                                className={`absolute bottom-0 -left-1/2 w-full h-1 z-10 ${
-                                idx <= currentStage ? "bg-blue-500" : "bg-gray-300"
-                                }`}
-                            />
-                            )}
-                        </div>
+                                {idx !== 0 && (
+                                    <div className={`absolute bottom-0 -left-1/2 w-full h-1 z-10 ${isStageActive(idx, currentStage, app.status) ? (stage.key === "result" && (app.status === "accepted" || app.status === "rejected") ? stageColors.connector : "bg-blue-500") : "bg-gray-300"}`} />
+                                )}
+                            </div>
                         )
                     })}
                 </div>
+                <Dialog open={openDialogAppId === app.id} onOpenChange={() => setOpenDialogAppId(null)}>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Interview Schedule</DialogTitle>
+                            <DialogDescription>
+                                {/* Display interview details here */}
+                                Scheduled on: {app.interviewDate || "TBD"} <br/>
+                                Mode: {app.interviewMode || "TBD"}
+                            </DialogDescription>
+                        </DialogHeader>
+                        <Button onClick={() => setOpenDialogAppId(null)}>Close</Button>
+                    </DialogContent>
+                </Dialog>
             </div>
             )
         })}

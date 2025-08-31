@@ -115,7 +115,7 @@ function JobApplication() {
         portfolioLink,
         linkedinLink,
         supportDoc: fileUrl,
-        status: "review",
+        status: "reviewing",
         createdAt: serverTimestamp()
       });
 

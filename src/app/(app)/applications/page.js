@@ -173,7 +173,11 @@ export default function ApplicationsPage() {
         const screening = snap.docs
           .map(d => d.data())
           .find(s => s.applicationId === detail.id);
-        setScreeningData(screening || null);
+
+        const job = jobs.find(j => j.id === detail.jobId);
+        const totalJobSkills = job?.tags?.length || 0;
+
+        setScreeningData(screening ? { ...screening, totalJobSkills } : null);
       } catch (e) {
         console.error("Failed to load screening data", e);
         setScreeningData(null);
