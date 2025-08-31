@@ -707,13 +707,20 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList })
         if (viewerRole === ROLES.MANAGER && viewerDeptId) {
           userQ = query(userQ, where('departmentId', '==', viewerDeptId));
         }
-        const usersSnap = await getDocs(userQ);
-        const users = usersSnap.docs
-          .map(d => ({ id: d.id, ...d.data() }))
-          .filter((u) => u.role !== 'applicant' && u.id !== viewerUid);
+          const usersSnap = await getDocs(userQ);
+
+          // Only employees. Exclude applicants, managers/HR, and the viewer themself.
+          const employees = usersSnap.docs
+            .map(d => ({ id: d.id, ...d.data() }))
+            .filter(u => {
+              const raw = String(u.role || '').toLowerCase();
+              if (raw === 'applicant') return false;          
+              return normalizeRole(raw) === ROLES.EMPLOYEE  
+                    && u.id !== viewerUid;                  
+            });
 
         const results = [];
-        for (const u of users) {
+        for (const u of employees) {
           const expectedKeys = await expectedCompletionKeysForDept(u.departmentId);
 
           const tasksSnap = await getDocs(collection(db, 'userOnboarding', u.id, 'tasks'));
