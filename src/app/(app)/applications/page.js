@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/tooltip"
 import { Info } from "lucide-react";
 import React from "react";
+import CircularProgress from "@/components/ui/CircularProgress";
 
 export default function ApplicationsPage() {
   const [apps, setApps] = useState([]);
@@ -54,9 +55,30 @@ export default function ApplicationsPage() {
         setUsers(usersSnap.docs.map((d)=>({ id: d.id, ...d.data() })));
       } catch {}
 
-      // base applications query (we keep it client-side filtered for simplicity)
-      const appsSnap = await getDocs(query(collection(db, "applications"), orderBy("createdAt", "desc")));
-      const rows = appsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // fetch applications
+      const appsSnap = await getDocs(
+        query(collection(db, "applications"), orderBy("createdAt", "desc"))
+      );
+      let rows = appsSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+      // fetch screening data
+      const screeningSnap = await getDocs(collection(db, "screening"));
+      const screeningByAppId = new Map(
+        screeningSnap.docs.map((d) => {
+          const data = d.data();
+          return [data.applicationId, data];
+        })
+      );
+
+      // merge finalScore into apps
+      rows = rows.map((app) => {
+        const screen = screeningByAppId.get(app.id);
+        return {
+          ...app,
+          matchPercent: screen?.finalScore ?? app.matchPercent ?? 0,
+        };
+      });
+
       setApps(rows);
     };
     load();
@@ -239,7 +261,7 @@ export default function ApplicationsPage() {
               <th className="text-left p-2 border">Job Title</th>
               <th className="text-left p-2 border">Department</th>
               <th className="text-left p-2 border">Status</th>
-              <th className="text-left p-2 border">Match%</th>
+              <th className="text-left p-2 border">Match (%)</th>
               <th className="text-left p-2 border">Links</th>
               <th className="text-left p-2 border">Date</th>
               <th className="text-left p-2 border">Actions</th>
@@ -263,11 +285,8 @@ export default function ApplicationsPage() {
                   <td className="p-2 border">{deptName}</td>
                   <td className="p-2 border capitalize">{a.status || "applied"}</td>
                   <td className="p-2 border">
-                    <div className="w-36">
-                      <div className="text-xs mb-1">{match}%</div>
-                      <div className="h-2 bg-gray-200 rounded">
-                        <div className="h-2 rounded" style={{ width: `${match}%`, backgroundColor: '#2b99ff' }} />
-                      </div>
+                    <div className="flex justify-center">
+                      <CircularProgress percentage={match} size={40} strokeWidth={4} />
                     </div>
                   </td>
                   <td className="p-2 border">
