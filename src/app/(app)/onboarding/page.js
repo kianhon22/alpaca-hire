@@ -319,7 +319,7 @@ function ManageSteps({ scopeKey, scopeLabel }) {
             <div className="col-span-4">Summary</div>
             <div className="col-span-1">Order</div>
             <div className="col-span-1">Due±</div>
-            <div className="col-span-1 text-right">Actions</div>
+            <div className="col-span-1 text-right">Action</div>
           </div>
 
           {loading ? (
@@ -657,7 +657,7 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList })
                 <th className="text-left px-4 py-3">Status</th>
                 <th className="text-left px-4 py-3">Last activity</th>
                 <th className="text-left px-4 py-3">Due</th>
-                <th className="text-right px-4 py-3">Attachments</th>
+                <th className="text-right px-4 py-3">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -689,10 +689,18 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList })
                     <td className="px-4 py-3"><StatusBadge status={r.status} /></td>
                     <td className="px-4 py-3">{fmtDate(r.lastUpdated)}</td>
                     <td className="px-4 py-3">{dueCell}</td>
-                    <td className="px-4 py-3 text-right">
+                    {/* <td className="px-4 py-3 text-right">
                       <button className="text-blue-600 hover:underline" onClick={() => setShowAttachmentsFor(r.uid)}>
                         View
                       </button>
+                    </td> */}
+                    <td className="px-4 py-3 text-right">
+                      <Link
+                        href={`/onboarding/onboarding-documents/${r.uid}`}
+                        className="text-blue-600 hover:underline"
+                      >
+                        View details
+                      </Link>
                     </td>
                   </tr>
                 );
