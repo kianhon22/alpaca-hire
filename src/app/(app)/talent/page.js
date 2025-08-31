@@ -197,10 +197,10 @@ export default function TalentPage() {
   }
   
   return (
-    <div className="mx-10">
+    <div className="space-y-6">
       {/* <SidebarTrigger /> */}
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Recruitment</h1>
+      <div className="flex items-center justify-between mb-4 rounded-xl text-[#2b99ff]">
+        <h1 className="text-3xl font-bold">Recruitment</h1>
         <Button onClick={()=>setJobFormOpen(true)}>+ New Job</Button>
       </div>
 

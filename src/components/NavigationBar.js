@@ -157,6 +157,8 @@ export default function NavigationBar() {
                   <ul className="grid min-w-[220px] gap-1">
                     <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/background">Background</Link></NavMenu.Link></li>
                     <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/culture">Culture</Link></NavMenu.Link></li>
+                    <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/policy">Policy</Link></NavMenu.Link></li>
+                    <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/map">Map</Link></NavMenu.Link></li>
                     <li><NavMenu.Link asChild><Link className="block rounded-md px-3 py-2 text-sm hover:bg-gray-100" href="/about/department">Department</Link></NavMenu.Link></li>
                   </ul>
                 </NavMenu.Content>

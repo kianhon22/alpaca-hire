@@ -7,10 +7,7 @@ import {
   collection, doc, getDoc, getDocs, query, where, orderBy,
   setDoc, updateDoc, deleteDoc, writeBatch
 } from 'firebase/firestore';
-
 import { onAuthStateChanged } from 'firebase/auth';
-import { Lock } from 'lucide-react';
-
 import AttachmentsModal from '@/components/ui/attachment-modal';
 import TaskModal from '@/components/onboarding/TaskModal';
 
@@ -357,15 +354,15 @@ function ManageSteps({ scopeKey, scopeLabel }) {
   return (
     <section className="w-full bg-white">
       <div className="max-w-6xl mx-auto px-6 py-1 text-black">
-        <h2 className="text-2xl font-bold mb-2">
-          {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
+        <h2 className="text-3xl font-bold mb-2 rounded-xl text-[#2b99ff]">
+          {scopeKey === 'base' ? 'General Tasks' : `Department Tasks`}
         </h2>
         <p className="text-black/70 mb-6">Manage onboarding steps and tasks.</p>
 
         <div className="rounded-xl border overflow-hidden">
         <div className="px-4 py-3 border-b bg-gray-50 flex items-center justify-between">
            <div className="font-semibold">
-             {scopeKey === 'base' ? 'General Tasks' : `Department Tasks — ${scopeLabel}`}
+             {scopeKey === 'base' ? 'General Tasks' : `${scopeLabel}`}
           </div>
            <div className="flex items-center gap-2">
              {!reorderMode ? (
@@ -793,8 +790,8 @@ function ProgressTab({ viewerRole, viewerDeptId, viewerUid, deptMap, deptList })
   return (
     <section className="w-full bg-white">
       <div className="max-w-6xl mx-auto px-6 py-1 text-black">
-        <h2 className="text-2xl font-bold mb-2">Onboarding Progress</h2>
-        <div className="flex flex-wrap items-center gap-3 mb-4">
+        <h2 className="text-3xl font-bold mb-2 rounded-xl text-[#2b99ff]">Onboarding Progress</h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4 py-1">
           <input className="border rounded-lg px-3 py-2 w-64" placeholder="Search name or email"
                  value={qText} onChange={e => setQText(e.target.value)} />
           <select className="border rounded-lg px-3 py-2"
@@ -986,7 +983,7 @@ function EmployeeSteps({ user, userDoc }) {
 
   return (
     <section className="w-full bg-white">
-      <div className="max-w-3xl mx-auto px-6 pt-10 text-black">
+      <div className="max-w-3xl mx-auto px-6 pt-5 text-black">
         <p className="text-xl font-medium flex items-center gap-3">
           Complete the steps below to get started with your new role.
           {overallDueMs && (
@@ -1200,11 +1197,33 @@ export default function OnboardingPage() {
           style={{ backgroundImage: "url('/onboarding-bg.jpg')" }}
         >
           <div className="absolute inset-0 bg-black/50" />
-          <h1 className="relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
-            {userDoc && userDoc.name ? `Welcome onboard, ${userDoc.name}!` : 'Welcome onboard!'}
+
+          <h1 className="welcome-heading relative z-10 text-5xl md:text-6xl font-extrabold text-white text-center drop-shadow">
+            {userDoc && userDoc.name ? `Welcome Onboard, ${userDoc.name}!` : 'Welcome onboard!'}
           </h1>
+
+          {/* scoped styles for the subtle fade + float */}
+          <style jsx>{`
+            .welcome-heading {
+              /* 1) fade + rise once, then 2) gentle float forever */
+              animation:
+                welcomeEnter 1.4s cubic-bezier(0.22, 1, 0.36, 1) both,
+                welcomeFloat 12s ease-in-out 900ms infinite;
+              will-change: transform, opacity, filter;
+            }
+            @keyframes welcomeEnter {
+              from { opacity: 0; transform: translateY(12px); filter: blur(4px); }
+              to   { opacity: 1; transform: translateY(0);     filter: blur(0); }
+            }
+            @keyframes welcomeFloat {
+              0%   { transform: translateY(0); }
+              50%  { transform: translateY(-6px); }
+              100% { transform: translateY(0); }
+            }
+          `}</style>
         </section>
       )}
+
 
       <div className="max-w-6xl mx-auto px-6 pt-8">
         {(isHR || isMgr) && (
@@ -1219,7 +1238,7 @@ export default function OnboardingPage() {
               onClick={() => setTab('tasks')}
               className={`px-3 py-1.5 rounded-lg border ${tab==='tasks' ? 'bg-black text-white' : 'bg-white'}`}
             >
-              {isHR ? 'General Tasks' : `Department Tasks — ${deptNameOf(userDoc?.departmentId, deptMap)}`}
+              {isHR ? 'General Tasks' : 'Department Tasks'}
             </button>
           </div>
         )}
