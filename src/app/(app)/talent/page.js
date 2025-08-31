@@ -1,8 +1,9 @@
 'use client'
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { collection, getDocs, query, where, addDoc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, query, where, addDoc, serverTimestamp, doc, updateDoc, deleteDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,7 @@ import { LoaderCircle, MoreHorizontal, Pencil, Trash, UserRoundCheck, UserRoundS
 import { Badge } from "@/components/ui/badge";
 
 export default function TalentPage() {
+  const router = useRouter();
   const [jobs, setJobs] = useState([]); // Store job lists
   const [departments, setDepartments] = useState([]);
   const [activeCount, setActiveCount] = useState(0);
@@ -49,14 +51,38 @@ export default function TalentPage() {
   const [jobTitle, setJobTitle] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [jobDepartment, setJobDepartment] = useState("");
-  const [jobManager, setJobManager] = useState("");
+  // managerId will be derived from selected department
   const [numOfOpenPosition, setNumOfOpenPosition] = useState(1);
   const [numOfYearExperience, setNumOfYearExperience] = useState("");
   const [requiredSkills, setRequiredSkills] = useState("");
 
-  const [managers, setManagers] = useState([]); // Store manager lists
+  const [managers, setManagers] = useState([]); // Store manager lists (still used to display names if needed)
 
   const [openDropdownJobId, setOpenDropdownJobId] = useState(null);
+
+  const recomputeCounts = (arr) => {
+    let active = 0; let closed = 0;
+    for (const j of arr) j.status === "open" ? active++ : j.status === "closed" ? closed++ : null;
+    setActiveCount(active); setClosedCount(closed);
+  };
+
+  const updateJobStatus = async (jobId, status) => {
+    try {
+      await updateDoc(doc(db, "jobs", jobId), { status, updatedAt: new Date() });
+      setJobs(prev => { const next = prev.map(j => j.id === jobId ? { ...j, status } : j); recomputeCounts(next); return next; });
+    } catch (e) {
+      console.error("Failed to update job status", e);
+    }
+  };
+
+  const deleteJob = async (jobId) => {
+    try {
+      await deleteDoc(doc(db, "jobs", jobId));
+      setJobs(prev => { const next = prev.filter(j => j.id !== jobId); recomputeCounts(next); return next; });
+    } catch (e) {
+      console.error("Failed to delete job", e);
+    }
+  };
   
   // Fetch 'jobs' database
   useEffect(() => {
@@ -130,16 +156,17 @@ export default function TalentPage() {
     console.log(jobTitle, jobDescription, jobDepartment, jobManager, numOfOpenPosition, numOfYearExperience, requiredSkills)
     console.log(requiredSkills.split(",").map(skill => skill.trim()))
     try {
+      const dept = departments.find(d => d.id === jobDepartment);
       await addDoc(collection(db, "jobs"), {
         title: jobTitle,
         description: jobDescription,
         departmentId: jobDepartment || null,
-        managerId: jobManager || null,
+        managerId: dept?.managerId || null,
         status: "open", // default status
         createdAt: serverTimestamp(),
         tags: requiredSkills ? requiredSkills.split(",").map(skill => skill.trim()) : [],
-        numOfOpenPosition: numOfOpenPosition || 1,
-        numOfYearExperience: numOfYearExperience || "",
+        numOfOpenPosition: Number(numOfOpenPosition) || 1,
+        numOfYearExperience: Number(numOfYearExperience) || 1,
       });
 
       console.log("Job posted successfully!");
@@ -148,7 +175,7 @@ export default function TalentPage() {
       setJobTitle("");
       setJobDescription("");
       setJobDepartment("");
-      setJobManager("");
+      // manager auto-assigned from department
       setNumOfOpenPosition("");
       setNumOfYearExperience("");
       setRequiredSkills("");
@@ -172,95 +199,81 @@ export default function TalentPage() {
           <TabsTrigger value="active" className={"px-5 hover: cursor-pointer"}>Active ({activeCount})</TabsTrigger>
           <TabsTrigger value="closed" className={"px-5 hover: cursor-pointer"}>Closed ({closedCount})</TabsTrigger>
         </TabsList>
-        <TabsContent value="active" className="space-y-4 mt-2">
-          {jobs
-            .filter((job) => job.status === "open")
-            .map((job) => (
-              <div
-                key={job.id}
-                className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg"
-              >
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-bold">{job.title}</h2>
-                  <p className="text-sm text-gray-500">
-                    {job.createdAt?.toDate
-                      ? job.createdAt.toDate().toLocaleDateString()
-                      : new Date(job.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                <h2 className="text-xs text-gray-600">{job.department}</h2>
-                <div className="flex justify-between items-center mt-3">
-                  <div className='flex flex-wrap gap-2'>
-                    <Badge variant="outline" className="bg-[#2B99FF] text-white">
-                    {job.applicantsCount || 0} applicants
-                    </Badge>
-                    <Badge variant="outline" className="bg-[#FFAFCC] text-white">
-                    {job.recruitedCount || 0}/{job.numOfOpenPosition || 1} recruited
-                    </Badge>
+        <TabsContent value="active" className="mt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {jobs
+              .filter((job) => job.status === "open")
+              .map((job) => (
+                <div key={job.id} className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-bold">{job.title}</h2>
+                    {/* <p className="text-sm text-gray-500">
+                      {job.createdAt?.toDate
+                        ? job.createdAt.toDate().toLocaleDateString()
+                        : new Date(job.createdAt).toLocaleDateString()}
+                    </p> */}
                   </div>
-                  <DropdownMenu open={openDropdownJobId === job.id} onOpenChange={(open) => setOpenDropdownJobId(open ? job.id : null)}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[200px]">
-                      <DropdownMenuGroup>
-                        <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
-                        <DropdownMenuItem><UserRoundCheck />Close Position</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600"><Trash className="text-red-600" />Delete</DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-              </div>
-            ))}
-          </TabsContent>
-        <TabsContent value="closed" className="space-y-4 mt-2">
-          {jobs
-            .filter((job) => job.status === "closed")
-            .map((job) => (
-              <div
-                key={job.id}
-                className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg"
-              >
-                <div className="flex justify-between items-center">
-                  <h2 className="text-lg font-bold">{job.title}</h2>
-                  <p className="text-sm text-gray-500">
-                    {job.createdAt?.toDate
-                      ? job.createdAt.toDate().toLocaleDateString()
-                      : new Date(job.createdAt).toLocaleDateString()}
-                  </p>
-                </div>
-                
-                <div className="flex justify-between items-center mt-3">
-                  <div className='flex flex-wrap gap-2'>
-                    <Badge variant="outline" className="bg-[#2B99FF] text-white">
-                    {job.applicantsCount || 0} applicants
-                    </Badge>
-                    <Badge variant="outline" className="bg-[#FFAFCC] text-white">
-                    {job.recruitedCount || 0}/{job.numOfOpenPosition || 1} recruited
-                    </Badge>
+                  <div className="text-xs text-gray-600 mt-1">{departments.find(d=>d.id===job.departmentId)?.name || "-"}</div>
+                  <div className="flex justify-between items-center mt-3">
+                    <div className='flex flex-wrap gap-2'>
+                      <button className="bg-[#2B99FF] text-white rounded-md px-3 py-1 text-sm cursor-pointer" onClick={(e)=>{ e.stopPropagation(); router.push(`/applications?jobId=${job.id}`) }}>{job.applicantsCount || 0} applicants</button>
+                      <Badge variant="outline" className="bg-[#FFAFCC] text-white">{job.recruitedCount || 0}/{job.numOfOpenPosition || 1} recruited</Badge>
+                    </div>
+                    <DropdownMenu open={openDropdownJobId === job.id} onOpenChange={(open) => setOpenDropdownJobId(open ? job.id : null)}>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm"><MoreHorizontal /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[200px]">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => updateJobStatus(job.id, "closed")}><UserRoundCheck />Close Position</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-red-600" onSelect={() => deleteJob(job.id)}><Trash className="text-red-600" />Delete</DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <DropdownMenu open={openDropdownJobId === job.id} onOpenChange={(open) => setOpenDropdownJobId(open ? job.id : null)}>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="sm">
-                        <MoreHorizontal />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[200px]">
-                      <DropdownMenuGroup>
-                        <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
-                        <DropdownMenuItem><UserRoundSearch />Open Position</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem className="text-red-600"><Trash className="text-red-600" />Delete</DropdownMenuItem>
-                      </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </div>
-              </div>
-            ))}
+              ))}
+          </div>
+        </TabsContent>
+        <TabsContent value="closed" className="mt-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            {jobs
+              .filter((job) => job.status === "closed")
+              .map((job) => (
+                <div key={job.id} className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg">
+                  <div className="flex justify-between items-center">
+                    <h2 className="text-lg font-bold">{job.title}</h2>
+                    <p className="text-sm text-gray-500">
+                      {job.createdAt?.toDate
+                        ? job.createdAt.toDate().toLocaleDateString()
+                        : new Date(job.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div className="text-xs text-gray-600 mt-1">{departments.find(d=>d.id===job.departmentId)?.name || "-"}</div>
+                  <div className="flex justify-between items-center mt-3">
+                    <div className='flex flex-wrap gap-2'>
+                      <button className="bg-[#2B99FF] text-white rounded-md px-3 py-1 text-sm cursor-pointer" onClick={(e)=>{ e.stopPropagation(); router.push(`/applications?jobId=${job.id}`) }}>{job.applicantsCount || 0} applicants</button>
+                      <Badge variant="outline" className="bg-[#FFAFCC] text-white">{job.recruitedCount || 0}/{job.numOfOpenPosition || 1} recruited</Badge>
+                    </div>
+                    <DropdownMenu open={openDropdownJobId === job.id} onOpenChange={(open) => setOpenDropdownJobId(open ? job.id : null)}>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm"><MoreHorizontal /></Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-[200px]">
+                        <DropdownMenuGroup>
+                          <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => updateJobStatus(job.id, "open")}><UserRoundSearch />Open Position</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem className="text-red-600" onSelect={() => deleteJob(job.id)}><Trash className="text-red-600" />Delete</DropdownMenuItem>
+                        </DropdownMenuGroup>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                </div>
+              ))}
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -297,31 +310,17 @@ export default function TalentPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className='my-2'>
-                  <label className="text-black text-sm font-bold">Manager <span className="text-red-500">*</span></label>
-                    <Select value={jobManager} onValueChange={(value) => setJobManager(value)} required>
-                        <SelectTrigger className="w-[200px] bg-gray-100 p-2 rounded-md border-2">
-                            <SelectValue placeholder="Select Manager" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {managers.map((manager) => (
-                              <SelectItem key={manager.id} value={manager.id}>
-                                {manager.name}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
+                {/* Manager auto-derived from department; no manual field */}
                 <div className='my-2 flex justify-between gap-1'>
                   <div className='flex-1'>
                     <label className="text-black text-sm font-bold">Number of Open Position <span className="text-red-500">*</span></label>
-                    <Input className="bg-gray-100 p-2 rounded-md border-2" placeholder="Default: 1" required
-                    onChange={(event)=>setNumOfOpenPosition(event.target.value)}/>
+                    <Input type="number" min="1" defaultValue={1} className="bg-gray-100 p-2 rounded-md border-2" required
+                    onChange={(event)=>setNumOfOpenPosition(event.target.value)} />
                   </div>
                   <div className='flex-1'>
                     <label className="text-black text-sm font-bold">Preferred Year of Experience</label>
-                    <Input className="bg-gray-100 p-2 rounded-md border-2" placeholder=""
-                    onChange={(event)=>setNumOfYearExperience(event.target.value)}/>
+                    <Input type="number" min="1" defaultValue={1} className="bg-gray-100 p-2 rounded-md border-2"
+                    onChange={(event)=>setNumOfYearExperience(event.target.value)} />
                   </div>
               </div>
               <div>
