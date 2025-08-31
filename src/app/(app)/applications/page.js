@@ -26,20 +26,38 @@ import {
 import { Info } from "lucide-react";
 import React from "react";
 import CircularProgress from "@/components/ui/CircularProgress";
+import { useSearchParams } from "next/navigation";
+import { ArrowDownWideNarrow } from "lucide-react";
+import ResetFiltersButton from "@/components/ui/reset-filter-button";
 
 export default function ApplicationsPage() {
+
+  const searchParams = useSearchParams();
+  const jobIdFromUrl = searchParams.get("jobId") || searchParams.get("job") || "all";
+
+  const [filters, setFilters] = useState({
+    department: "all",
+    jobId: jobIdFromUrl,     // ⬅️ preselect from URL
+    matchOrder: "desc",
+    q: "",
+  });
+
   const [apps, setApps] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [users, setUsers] = useState([]);
   const [screeningData, setScreeningData] = useState(null);
 
-  const [filters, setFilters] = useState({
-    department: "all",
-    jobId: "all",
-    matchOrder: "desc", // desc | asc
-    q: "",
-  });
+  const initialFilters = useMemo(
+    () => ({ department: "all", jobId: "all", matchOrder: "desc", q: "" }),
+    []
+  );
+
+  const handleResetFilters = () => {
+    setFilters(initialFilters);
+  };
+  
+  const matchOrderLabel = filters.matchOrder === "desc" ? "Highest match first" : "Lowest match first";
 
   useEffect(() => {
     const load = async () => {
@@ -83,6 +101,11 @@ export default function ApplicationsPage() {
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const jid = searchParams.get("jobId") || searchParams.get("job") || "all";
+    setFilters(f => (f.jobId === jid ? f : { ...f, jobId: jid }));
+  }, [searchParams]);
 
   const deptOptions = useMemo(() => {
     if (departments.length) return ["all", ...departments.map((d) => d.name)];
@@ -153,8 +176,6 @@ export default function ApplicationsPage() {
       );
     } else if (s === "hired") {
       actions.push(<span key="hired" className="text-xs text-green-600">Hired</span>);
-    } else if (s === "rejected") {
-      actions.push(<span key="rejected" className="text-xs text-gray-500">Rejected</span>);
     }
     return <div className="flex items-center gap-2">{actions}</div>;
   };
@@ -242,15 +263,30 @@ export default function ApplicationsPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={filters.matchOrder} onValueChange={(v) => setFilters((f) => ({ ...f, matchOrder: v }))}>
-          <SelectTrigger className="w-40">
-            <SelectValue placeholder="Order" />
+        <Select
+          value={filters.matchOrder}
+          onValueChange={(v) => setFilters((f) => ({ ...f, matchOrder: v }))}
+        >
+          <SelectTrigger className="w-[220px]">
+            <div className="flex items-center gap-2 truncate">
+              <ArrowDownWideNarrow className="h-4 w-4 text-gray-500" />
+              <span className="truncate">Sort: {matchOrderLabel}</span>
+            </div>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="desc">Match%: High → Low</SelectItem>
-            <SelectItem value="asc">Match%: Low → High</SelectItem>
+            <SelectItem value="desc">Highest match first</SelectItem>
+            <SelectItem value="asc">Lowest match first</SelectItem>
           </SelectContent>
         </Select>
+        <ResetFiltersButton
+          onReset={handleResetFilters}
+          currentFilters={filters}
+          initialFilters={initialFilters}
+          clearKeys={["jobId", "job", "department", "q", "matchOrder"]}  // remove these from URL if present
+          iconOnly
+          color="#000"
+          className="-ml-1"   // tweak spacing if needed
+        />
       </div>
 
       <div className="overflow-auto">
@@ -277,7 +313,7 @@ export default function ApplicationsPage() {
               const createdAt = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
               const status = (a.status || "pending").toLowerCase();
               const statusClass =
-                status === "pending" ? "bg-gray-100 text-gray-700" :
+               status === "accepted" ? "bg-green-100 text-green-700" :
                 status === "scheduled" ? "bg-blue-100 text-blue-700" :
                 status === "reviewing" ? "bg-yellow-100 text-yellow-800" :
                 status === "rejected" ? "bg-red-100 text-red-700" :

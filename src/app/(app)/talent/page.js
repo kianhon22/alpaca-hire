@@ -38,6 +38,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { LoaderCircle, MoreHorizontal, Pencil, Trash, UserRoundCheck, UserRoundSearch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import ResetFiltersButton from "@/components/ui/reset-filter-button";
 
 export default function TalentPage() {
   const router = useRouter();
@@ -64,7 +65,7 @@ export default function TalentPage() {
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedDept, setSelectedDept] = useState("all");
-  const [sortOrder, setSortOrder] = useState("desc"); // desc = newest first
+  const [sortOrder, setSortOrder] = useState("desc");
 
   const recomputeCounts = (arr) => {
     let active = 0; let closed = 0;
@@ -265,6 +266,18 @@ export default function TalentPage() {
             <SelectItem value="asc">Oldest First</SelectItem>
           </SelectContent>
         </Select>
+        <ResetFiltersButton
+          onReset={() => {
+            setSearchTerm("");
+            setSelectedDept("all");
+            setSortOrder("desc");
+          }}
+          currentFilters={{ q: searchTerm || "", department: selectedDept || "all", sort: sortOrder || "desc" }}
+          initialFilters={{ q: "", department: "all", sort: "desc" }}
+          clearKeys={[]} 
+          iconOnly       
+          color="#000"    
+        />
       </div>
       
       <Tabs defaultValue="active" className="mt-5">
@@ -329,11 +342,11 @@ export default function TalentPage() {
                 <div key={job.id} className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg">
                   <div className="flex justify-between items-center">
                     <h2 className="text-lg font-bold">{job.title}</h2>
-                    <p className="text-sm text-gray-500">
+                    {/* <p className="text-sm text-gray-500">
                       {job.createdAt?.toDate
                         ? job.createdAt.toDate().toLocaleDateString()
                         : new Date(job.createdAt).toLocaleDateString()}
-                    </p>
+                    </p> */}
                   </div>
                   <div className="text-xs text-gray-600 mt-1">{departments.find(d=>d.id===job.departmentId)?.name || "-"}</div>
                   <div className="flex justify-between items-center mt-3">

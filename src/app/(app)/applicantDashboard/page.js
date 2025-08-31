@@ -9,6 +9,7 @@ import { Award, Check, FileClock, FileText, MessagesSquare, UserRoundPen, X } fr
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Input } from '@/components/ui/input'
+import ResetFiltersButton from "@/components/ui/reset-filter-button";
 
 function ApplicantDashboard() {
 
@@ -18,7 +19,12 @@ function ApplicantDashboard() {
     const [statusFilter, setStatusFilter] = useState("all")
     const [sortOrder, setSortOrder] = useState("desc")
     const [openDialogAppId, setOpenDialogAppId] = useState(null)
-  
+    const handleResetFilters = () => {
+        setSearchTerm("");
+        setStatusFilter("all");
+        setSortOrder("desc");
+    };
+
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, async (user) => {
         if (user) {
@@ -151,7 +157,14 @@ function ApplicantDashboard() {
                     <SelectItem value="desc">Newest First</SelectItem>
                 </SelectContent>
             </Select>
-
+             <ResetFiltersButton
+                onReset={handleResetFilters}
+                currentFilters={{ q: searchTerm, status: statusFilter, order: sortOrder }}
+                initialFilters={{ q: "", status: "all", order: "desc" }}
+                iconOnly
+                color="#000"
+                className="h-9 w-9 p-0 md:ml-1"
+            />
             </div>
         </div>
 
