@@ -7,6 +7,7 @@ import { collection, query, where, getDocs, doc, getDoc } from "firebase/firesto
 import { onAuthStateChanged } from "firebase/auth"
 import { Award, Check, FileClock, FileText, MessagesSquare, UserRoundPen, X } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from '@/components/ui/dialog'
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Input } from '@/components/ui/input'
 
 function ApplicantDashboard() {
@@ -14,6 +15,8 @@ function ApplicantDashboard() {
     const [applications, setApplications] = useState([])
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState("")
+    const [statusFilter, setStatusFilter] = useState("all")
+    const [sortOrder, setSortOrder] = useState("desc")
     const [openDialogAppId, setOpenDialogAppId] = useState(null)
   
     useEffect(() => {
@@ -87,11 +90,23 @@ function ApplicantDashboard() {
         return idx <= currentStage
     }
 
-    const filteredApps = applications.filter(
-        (app) =>
-        app.job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        app.job.description.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    // Filtering + Sorting
+    const filteredApps = applications
+        .filter((app) => {
+        const matchesSearch =
+            app.job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            app.job.description.toLowerCase().includes(searchTerm.toLowerCase())
+
+        const matchesStatus =
+            statusFilter === "all" ? true : app.status === statusFilter
+
+        return matchesSearch && matchesStatus
+        })
+        .sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt)
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt)
+        return sortOrder === "asc" ? dateA - dateB : dateB - dateA
+        })
   
     return (
     <div className="mx-10">
@@ -108,6 +123,35 @@ function ApplicantDashboard() {
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className='bg-gray-100'
             />
+
+            {/* Status Filter */}
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[180px] bg-gray-100">
+                    <SelectValue placeholder="Filter by status" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="applied">Applied</SelectItem>
+                    <SelectItem value="reviewing">Reviewing</SelectItem>
+                    <SelectItem value="scheduled">Interview</SelectItem>
+                    <SelectItem value="processing">Processing</SelectItem>
+                    <SelectItem value="result">Result</SelectItem>
+                    <SelectItem value="accepted">Accepted</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                </SelectContent>
+                </Select>
+
+                {/* Sort Order */}
+                <Select value={sortOrder} onValueChange={setSortOrder}>
+                <SelectTrigger className="w-[180px] bg-gray-100">
+                    <SelectValue placeholder="Sort by date" />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="asc">Oldest First</SelectItem>
+                    <SelectItem value="desc">Newest First</SelectItem>
+                </SelectContent>
+            </Select>
+
             </div>
         </div>
 

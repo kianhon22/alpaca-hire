@@ -62,6 +62,10 @@ export default function TalentPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [edit, setEdit] = useState({ id: "", title: "", description: "", departmentId: "", numOfOpenPosition: 1, numOfYearExperience: 1, tagsText: "" });
 
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedDept, setSelectedDept] = useState("all");
+  const [sortOrder, setSortOrder] = useState("desc"); // desc = newest first
+
   const recomputeCounts = (arr) => {
     let active = 0; let closed = 0;
     for (const j of arr) j.status === "open" ? active++ : j.status === "closed" ? closed++ : null;
@@ -197,6 +201,29 @@ export default function TalentPage() {
       setLoading(false)
     }
   }
+
+  // Filtering & sorting
+  const filteredJobs = jobs
+    .filter((job) => {
+      // search filter
+      const term = searchTerm.toLowerCase();
+      const matchesSearch =
+        job.title?.toLowerCase().includes(term) ||
+        job.description?.toLowerCase().includes(term) ||
+        job.tags?.some((tag) => tag.toLowerCase().includes(term));
+
+      // department filter
+      const matchesDept =
+        selectedDept === "all" || job.departmentId === selectedDept;
+
+      return matchesSearch && matchesDept;
+    })
+    .sort((a, b) => {
+      if (!a.createdAt || !b.createdAt) return 0;
+      const aDate = a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+      const bDate = b.createdAt.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+      return sortOrder === "desc" ? bDate - aDate : aDate - bDate;
+    });
   
   return (
     <div className="space-y-6">
@@ -206,6 +233,40 @@ export default function TalentPage() {
         <Button onClick={()=>setJobFormOpen(true)}>+ New Job</Button>
       </div>
 
+      {/* Filters UI */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <Input
+          placeholder="Search jobs..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="max-w-sm"
+        />
+
+        <Select value={selectedDept} onValueChange={setSelectedDept}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Filter by Department" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Departments</SelectItem>
+            {departments.map((d) => (
+              <SelectItem key={d.id} value={d.id}>
+                {d.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={sortOrder} onValueChange={setSortOrder}>
+          <SelectTrigger className="w-[200px]">
+            <SelectValue placeholder="Sort by Date Posted" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="desc">Newest First</SelectItem>
+            <SelectItem value="asc">Oldest First</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      
       <Tabs defaultValue="active" className="mt-5">
         <TabsList>
           <TabsTrigger value="active" className={"px-5 hover: cursor-pointer"}>Active ({activeCount})</TabsTrigger>
@@ -213,7 +274,7 @@ export default function TalentPage() {
         </TabsList>
         <TabsContent value="active" className="mt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-            {jobs
+            {filteredJobs
               .filter((job) => job.status === "open")
               .map((job) => (
                 <div key={job.id} className="rounded-xl border bg-white p-5 shadow-sm hover:shadow-lg">
