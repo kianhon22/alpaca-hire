@@ -275,6 +275,13 @@ export default function ApplicationsPage() {
                 users.find(u=>u.id===a.applicantId)?.name || a.applicantName || a.name || a.applicantId;
               const match = Number(a.matchPercent || a.match || 0);
               const createdAt = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+              const status = (a.status || "pending").toLowerCase();
+              const statusClass =
+                status === "pending" ? "bg-gray-100 text-gray-700" :
+                status === "scheduled" ? "bg-blue-100 text-blue-700" :
+                status === "reviewing" ? "bg-yellow-100 text-yellow-800" :
+                status === "rejected" ? "bg-red-100 text-red-700" :
+                status === "recruited" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700";
               return (
                 <tr key={a.id} className="hover:bg-gray-50 cursor-pointer" onClick={()=>setDetail(a)}>
                   <td className="p-2 border">
@@ -283,7 +290,21 @@ export default function ApplicationsPage() {
                   </td>
                   <td className="p-2 border">{job?.title || a.jobTitle || a.jobId}</td>
                   <td className="p-2 border">{deptName}</td>
-                  <td className="p-2 border capitalize">{a.status || "applied"}</td>
+                  <td className="p-2 border capitalize">
+                    <div className="flex flex-col gap-1">
+                      <span className={`px-2 py-1 rounded text-xs w-fit ${statusClass}`}>{status}</span>
+                      {status === "scheduled" && a.interviewUrl && (
+                        <a
+                          href={a.interviewUrl}
+                          target="_blank"
+                          className="text-[#2b99ff] underline text-xs w-fit"
+                          onClick={(e)=>e.stopPropagation()}
+                        >
+                          Interview Link
+                        </a>
+                      )}
+                    </div>
+                  </td>
                   <td className="p-2 border">
                     <div className="flex justify-center">
                       <CircularProgress percentage={match} size={40} strokeWidth={4} />
@@ -443,23 +464,25 @@ export default function ApplicationsPage() {
           <DialogHeader>
             <DialogTitle>Schedule interview</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <Input type="date" value={schedule.date} onChange={(e)=>setSchedule(s=>({ ...s, date: e.target.value }))} />
-            <Input type="time" value={schedule.time} onChange={(e)=>setSchedule(s=>({ ...s, time: e.target.value }))} />
+          <div className="space-y-3 text-sm">
+            <p>Select an external scheduler and paste its invite link (Teams/Meet/Zoom/etc.). We’ll store it and update the application status.</p>
+            <Input placeholder="Paste invite URL" value={schedule.time} onChange={(e)=>setSchedule(s=>({ ...s, time: e.target.value }))} />
             <Button
               className="bg-[#2b99ff]"
               onClick={async ()=>{
                 try {
                   if (!schedule.app) return;
-                  const when = new Date(`${schedule.date}T${schedule.time}:00`);
-                  await addDoc(collection(db, "interviews"), {
+                  const inviteUrl = schedule.time?.trim();
+                  const docRef = await addDoc(collection(db, "interviews"), {
                     applicationId: schedule.app.id,
                     jobId: schedule.app.jobId,
                     applicantId: schedule.app.applicantId,
-                    when: Timestamp.fromDate(when),
+                    inviteUrl: inviteUrl || null,
                     createdAt: new Date(),
                   });
-                  await updateStatus(schedule.app.id, "scheduled");
+                  // Also store the interviewUrl on the application doc for quick rendering
+                  await updateDoc(doc(db, "applications", schedule.app.id), { status: "scheduled", interviewUrl: inviteUrl || null });
+                  setApps(prev => prev.map(a => a.id === schedule.app.id ? { ...a, status: "scheduled", interviewUrl: inviteUrl || null } : a));
                   // Optional webhook email
                   const job = jobs.find(j=>j.id===schedule.app.jobId);
                   const dept = departments.find(d=>d.id===job?.departmentId);
@@ -468,14 +491,14 @@ export default function ApplicationsPage() {
                     applicantEmail: schedule.app.applicantEmail || users.find(u=>u.id===schedule.app.applicantId)?.email,
                     managerEmail: manager?.email,
                     hrEmail: process.env.NEXT_PUBLIC_HR_EMAIL,
-                    subject: `Interview scheduled for ${when.toLocaleString()}`,
-                    text: `Interview scheduled for ${when.toLocaleString()} for job ${job?.title || schedule.app.jobId}.`,
+                    subject: `Interview scheduled for ${job?.title || schedule.app.jobId}`,
+                    text: `Link: ${inviteUrl || "(provided externally)"}`,
                   });
                 } finally {
                   setSchedule({ open:false, app:null, date:"", time:"" });
                 }
               }}
-            >Confirm</Button>
+            >Save</Button>
           </div>
         </DialogContent>
       </Dialog>

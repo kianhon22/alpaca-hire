@@ -158,7 +158,7 @@ export default function DashboardPage() {
       setStats({
         totalJobs: jobsCount.data().count,
         openJobs: openJobsCount.data().count,
-        applicants: applicantsCount.data().count,
+        applicants: applicantsCount,
         interviews: interviewsCount,
         offers: offersCount,
         hires: hiresCount,
@@ -229,35 +229,36 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        {/* border-t-4 border-[#2b99ff] */}
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Total Jobs</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.totalJobs}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Open Jobs</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.openJobs}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Applicants</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.applicants}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Interviews</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.interviews}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Offers</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.offers}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Hires</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.hires}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Onboarding - In Progress</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.onboardingInProgress}</div>
         </div>
-        <div className="border-t-4 border-[#2b99ff] rounded-lg bg-white p-4 shadow-sm">
+        <div className="border rounded-lg bg-white p-4 shadow-sm">
           <div className="text-sm text-gray-500">Onboarding - Completed</div>
           <div className="text-3xl font-semibold text-gray-900 mt-2">{stats.onboardingCompleted}</div>
         </div>

@@ -10,6 +10,7 @@ import { auth, db } from '@/lib/firebase';
 
 import * as NavMenu from '@radix-ui/react-navigation-menu';
 import { ChevronDown } from 'lucide-react';
+import NotificationBell from '@/components/NotificationBell';
 
 /** Canonical role ids (keep these all lowercase) */
 const ROLES = {
@@ -166,8 +167,9 @@ export default function NavigationBar() {
             </NavMenu.List>
           </NavMenu.Root>
 
-          {/* User box */}
+          {/* User box + notifications */}
           <div className="flex items-center gap-3">
+            <NotificationBell user={user} role={role} />
             <div className="text-right">
               <div className="text-sm font-medium text-gray-900">{user.email}</div>
               <div className="text-xs text-gray-500">{role}</div>

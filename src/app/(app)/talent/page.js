@@ -59,6 +59,8 @@ export default function TalentPage() {
   const [managers, setManagers] = useState([]); // Store manager lists (still used to display names if needed)
 
   const [openDropdownJobId, setOpenDropdownJobId] = useState(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [edit, setEdit] = useState({ id: "", title: "", description: "", departmentId: "", numOfOpenPosition: 1, numOfYearExperience: 1, tagsText: "" });
 
   const recomputeCounts = (arr) => {
     let active = 0; let closed = 0;
@@ -77,7 +79,7 @@ export default function TalentPage() {
 
   const deleteJob = async (jobId) => {
     try {
-      await deleteDoc(doc(db, "jobs", jobId));
+      await updateDoc(doc(db, "jobs", jobId), { status: "deleted", updatedAt: new Date() });
       setJobs(prev => { const next = prev.filter(j => j.id !== jobId); recomputeCounts(next); return next; });
     } catch (e) {
       console.error("Failed to delete job", e);
@@ -235,7 +237,18 @@ export default function TalentPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[200px]">
                         <DropdownMenuGroup>
-                          <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => {
+                            setEdit({
+                              id: job.id,
+                              title: job.title || "",
+                              description: job.description || "",
+                              departmentId: job.departmentId || "",
+                              numOfOpenPosition: job.numOfOpenPosition || 1,
+                              numOfYearExperience: job.numOfYearExperience || 1,
+                              tagsText: (job.tags || []).join(", "),
+                            });
+                            setEditOpen(true);
+                          }}><Pencil />Edit</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => updateJobStatus(job.id, "closed")}><UserRoundCheck />Close Position</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-red-600" onSelect={() => deleteJob(job.id)}><Trash className="text-red-600" />Delete</DropdownMenuItem>
@@ -273,7 +286,18 @@ export default function TalentPage() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-[200px]">
                         <DropdownMenuGroup>
-                          <DropdownMenuItem><Pencil />Edit</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => {
+                            setEdit({
+                              id: job.id,
+                              title: job.title || "",
+                              description: job.description || "",
+                              departmentId: job.departmentId || "",
+                              numOfOpenPosition: job.numOfOpenPosition || 1,
+                              numOfYearExperience: job.numOfYearExperience || 1,
+                              tagsText: (job.tags || []).join(", "),
+                            });
+                            setEditOpen(true);
+                          }}><Pencil />Edit</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => updateJobStatus(job.id, "open")}><UserRoundSearch />Open Position</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem className="text-red-600" onSelect={() => deleteJob(job.id)}><Trash className="text-red-600" />Delete</DropdownMenuItem>
@@ -351,6 +375,87 @@ export default function TalentPage() {
               <Button type="button" variant="outline" onClick={()=>setJobFormOpen(false)}>Cancel</Button>
               </div>
             </form>
+        </DialogContent>
+      </Dialog>
+      {/* Edit Job Dialog */}
+      <Dialog open={editOpen} onOpenChange={(o)=>!o && setEditOpen(false)}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto [&>button]:hidden">
+          <DialogHeader>
+            <DialogTitle className='text-xl font-bold'>Edit Job</DialogTitle>
+            <DialogDescription className='text-xs italic'>Update job details; manager is derived from department.</DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={async (e)=>{
+              e.preventDefault();
+              try {
+                const dept = departments.find(d=>d.id===edit.departmentId);
+                await updateDoc(doc(db, "jobs", edit.id), {
+                  title: edit.title,
+                  description: edit.description,
+                  departmentId: edit.departmentId || null,
+                  managerId: dept?.managerId || null,
+                  numOfOpenPosition: Number(edit.numOfOpenPosition) || 1,
+                  numOfYearExperience: Number(edit.numOfYearExperience) || 1,
+                  tags: edit.tagsText ? edit.tagsText.split(",").map(s=>s.trim()).filter(Boolean) : [],
+                  updatedAt: new Date(),
+                });
+                setJobs(prev => prev.map(j => j.id === edit.id ? {
+                  ...j,
+                  title: edit.title,
+                  description: edit.description,
+                  departmentId: edit.departmentId,
+                  managerId: dept?.managerId || null,
+                  numOfOpenPosition: Number(edit.numOfOpenPosition) || 1,
+                  numOfYearExperience: Number(edit.numOfYearExperience) || 1,
+                  tags: edit.tagsText ? edit.tagsText.split(",").map(s=>s.trim()).filter(Boolean) : [],
+                } : j));
+                setEditOpen(false);
+              } catch (e) {
+                console.error("Failed to update job", e);
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="text-black text-sm font-bold">Job Title</label>
+              <Input className="bg-gray-100 p-2 rounded-md border-2" value={edit.title} onChange={(e)=>setEdit(s=>({...s, title: e.target.value}))} required />
+            </div>
+            <div>
+              <label className="text-black text-sm font-bold">Job Description</label>
+              <Textarea className="bg-gray-100 p-2 rounded-md border-2" value={edit.description} onChange={(e)=>setEdit(s=>({...s, description: e.target.value}))} required />
+            </div>
+            <div>
+              <label className="text-black text-sm font-bold">Department</label>
+              <Select value={edit.departmentId} onValueChange={(v)=>setEdit(s=>({...s, departmentId: v}))}>
+                <SelectTrigger className="w-[240px] bg-gray-100 p-2 rounded-md border-2">
+                  <SelectValue placeholder="Select Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  {departments.map((d)=>(
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className='my-2 flex justify-between gap-1'>
+              <div className='flex-1'>
+                <label className="text-black text-sm font-bold">Number of Open Position</label>
+                <Input type="number" min="1" className="bg-gray-100 p-2 rounded-md border-2" value={edit.numOfOpenPosition} onChange={(e)=>setEdit(s=>({...s, numOfOpenPosition: e.target.value}))} required />
+              </div>
+              <div className='flex-1'>
+                <label className="text-black text-sm font-bold">Preferred Year of Experience</label>
+                <Input type="number" min="1" className="bg-gray-100 p-2 rounded-md border-2" value={edit.numOfYearExperience} onChange={(e)=>setEdit(s=>({...s, numOfYearExperience: e.target.value}))} required />
+              </div>
+            </div>
+            <div>
+              <label className="text-black text-sm font-bold">Required Skills</label>
+              <Textarea className="bg-gray-100 p-2 rounded-md border-2" value={edit.tagsText} onChange={(e)=>setEdit(s=>({...s, tagsText: e.target.value}))} />
+            </div>
+            <div className='flex gap-5 justify-center'>
+              <Button type="submit" className={`bg-[#2B99FF] hover:bg-blue-950`}>Save</Button>
+              <Button type="button" variant="outline" onClick={()=>setEditOpen(false)}>Cancel</Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
