@@ -128,31 +128,27 @@ export default function NavigationBar() {
           {/* NAV (desktop) */}
           <NavMenu.Root className="hidden md:flex relative z-50">
             <NavMenu.List className="flex items-center gap-1">
-              {visibleTabs.map(tab => (
+                {visibleTabs.map(tab => {
+                  const base = "inline-flex items-center h-9 leading-none rounded-md px-3 text-sm font-medium";
+                  const active = isActive(tab.href)
+                    ? "bg-[#e9f4ff] text-[#2b99ff]"
+                    : "text-gray-700 hover:bg-gray-100";
+                  return (
                 <NavMenu.Item key={tab.key}>
                   <NavMenu.Link asChild>
-                    <Link
-                      href={tab.href}
-                      className={[
-                        'px-3 py-2 rounded-md text-sm font-medium transition',
-                        isActive(tab.href)
-                          ? 'bg-[#e9f4ff] text-[#2b99ff]'
-                          : 'text-gray-700 hover:bg-gray-100'
-                      ].join(' ')}
-                    >
+                    <Link href={tab.href} className={`${base} ${active}`}>
                       {tab.label}
                     </Link>
                   </NavMenu.Link>
                 </NavMenu.Item>
-              ))}
+              );
+            })}
 
                {/* About dropdown (placeholder) */}
               <NavMenu.Item className="relative">
-                <NavMenu.Trigger className="group inline-flex items-center gap-1 px-3 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-100 data-[state=open]:bg-[#e9f4ff] data-[state=open]:text-[#2b99ff]">
+                <NavMenu.Trigger className="group inline-flex items-center h-9 leading-none gap-1 rounded-md px-3 text-sm font-medium text-gray-700 hover:bg-gray-100 data-[state=open]:bg-[#e9f4ff] data-[state=open]:text-[#2b99ff]">
                   About
-                  <svg className="size-4 transition-transform duration-200 group-data-[state=open]:rotate-180" viewBox="0 0 24 24">
-                    <path d="M7 10l5 5 5-5" fill="currentColor" />
-                  </svg>
+                  <ChevronDown className="h-4 w-4 transition-transform duration-200 group-data-[state=open]:rotate-180" />
                 </NavMenu.Trigger>
                 <NavMenu.Content className="absolute top-full left-0 mt-2 rounded-lg border bg-white p-2 shadow-xl z-[60]">
                   <ul className="grid min-w-[220px] gap-1">
