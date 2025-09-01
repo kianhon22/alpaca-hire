@@ -2,8 +2,9 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { db } from '@/lib/firebase';
-import { collection, getDocs } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 import { useRouter } from 'next/navigation';
 import React, { useEffect, useState } from 'react'
 
@@ -11,6 +12,7 @@ function Jobs() {
 
   const [jobs, setJobs] = useState([]); // Store job lists
   const [activeCount, setActiveCount] = useState(0);
+  const [appliedJobIds, setAppliedJobIds] = useState(new Set());
 
   const [searchTerm, setSearchTerm] = useState('') // Search text input
 
@@ -39,6 +41,24 @@ function Jobs() {
     }
 
     fetchJobs();
+  }, []);
+
+  // Listen to auth and load the current user's applied job ids
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setAppliedJobIds(new Set());
+        return;
+      }
+      try {
+        const appsSnap = await getDocs(query(collection(db, 'applications'), where('applicantId', '==', user.uid)));
+        const ids = new Set(appsSnap.docs.map(d => d.data().jobId));
+        setAppliedJobIds(ids);
+      } catch (e) {
+        console.error('Failed to load applied jobs', e);
+      }
+    });
+    return () => unsub();
   }, []);
 
   // Filtered jobs (text search)
@@ -109,10 +129,16 @@ function Jobs() {
                   </Badge>
                 )}
               </div>
-              <Button className="bg-[#2B99FF] text-white hover:bg-[#1a7bd8] cursor-pointer"
-              onClick={() => router.push(`/jobs/application/${job.id}`)}>
-                Apply
-              </Button>
+              {appliedJobIds.has(job.id) ? (
+                <Button disabled className="bg-gray-300 text-gray-800 cursor-not-allowed hover:!bg-gray-300">
+                  Applied
+                </Button>
+              ) : (
+                <Button className="bg-[#2B99FF] text-white hover:bg-[#1a7bd8] cursor-pointer"
+                  onClick={() => router.push(`/jobs/application/${job.id}`)}>
+                  Apply
+                </Button>
+              )}
             </div>
           </div>
         ))}

@@ -90,11 +90,11 @@ export const summarizeOnboarding = onSchedule({ schedule: 'every 30 minutes', ti
 export async function writeStatusChangeNotification({ userId, jobTitle, status }) {
   if (!userId) return;
   const messages = {
-    pending: `Your application for ${jobTitle} was received and is pending review.`,
-    reviewing: `Your application for ${jobTitle} is under review.`,
+    reviewing: `Your application for ${jobTitle} was received and is under review.`,
+    // pending: `Your application for ${jobTitle} is under review.`,
     scheduled: `Interview scheduled for ${jobTitle}. Please check your invite link.`,
     accepted: `Congratulations! You've been recruited for ${jobTitle}.`,
-    rejected: `Thanks for applying to ${jobTitle}. You were not selected.`,
+    rejected: `Thank you for applying to ${jobTitle}. Unfortunately, you were not selected.`,
   };
   const message = messages[status] || `Status updated to ${status} for ${jobTitle}`;
   await db.collection('notifications').add({
@@ -152,31 +152,33 @@ export const onApplicationStatusChange = onDocumentUpdated({ document: 'applicat
 export const remindOnboardingDue = onSchedule({ schedule: 'every 24 hours', timeZone: 'Etc/UTC', region: 'us-central1' }, async () => {
   if (!resend) return;
   const now = Date.now();
-  const threeDays = new Date(now + 3 * 24 * 60 * 60 * 1000);
-  const oneDay = new Date(now + 1 * 24 * 60 * 60 * 1000);
+  const MS_IN_DAY = 24 * 60 * 60 * 1000;
+  const ONBOARDING_DAYS = 14; // client derives dueDate = startDate + 14 days
 
-  const tasksSnap = await db.collection('onboarding')
-    .where('status', '==', 'in_progress')
+  // Pull users who are still onboarding (status in_progress). If you also use 'pending', add it to the array.
+  const usersSnap = await db.collection('users')
+    // .where('status', 'in', ['in_progress'])
     .get();
-  if (tasksSnap.empty) return;
+  if (usersSnap.empty) return;
 
-  for (const docSnap of tasksSnap.docs) {
-    const ob = docSnap.data();
-    if (!ob.dueDate) continue;
-    const due = ob.dueDate.toDate ? ob.dueDate.toDate() : new Date(ob.dueDate);
-    const daysLeft = Math.ceil((due.getTime() - now) / (24 * 60 * 60 * 1000));
+  for (const docSnap of usersSnap.docs) {
+    const user = docSnap.data();
+    if (!user.startDate || !user.email) continue;
+    const start = user.startDate.toDate ? user.startDate.toDate() : new Date(user.startDate);
+    const due = new Date(start.getTime() + ONBOARDING_DAYS * MS_IN_DAY);
+    const daysLeft = Math.ceil((due.getTime() - now) / MS_IN_DAY);
+    const formattedDue = due.toLocaleDateString("en-US", {
+      weekday: "long",
+      month: "long",
+      day: "2-digit",
+      year: "numeric"
+    });    
+
     if (daysLeft === 3 || daysLeft === 1) {
-      const subject = daysLeft === 3 ? 'Onboarding reminder - 3 days left' : 'Onboarding reminder - 1 day left';
-      const text = `Hi, please complete your onboarding tasks for ${ob.jobTitle || 'your role'} by ${due.toDateString()}.`;
-      // find email from users if not present on doc
-      let email = ob.userEmail;
-      if (!email && ob.userId) {
-        const u = await db.collection('users').doc(ob.userId).get();
-        email = u.exists ? (u.data().email || undefined) : undefined;
-      }
-      if (!email) continue;
+      const subject = daysLeft === 3 ? 'Onboarding Tasks Reminder - 3 days left' : 'Onboarding Tasks Reminder - 1 day left';
+      const text = `Here is a gentle reminder to complete your onboarding tasks by ${formattedDue}. Please reach out to your manager if you have any questions, thank you.`;
       try {
-        await resend.emails.send({ from: RESEND_FROM, to: email, subject, text });
+        await resend.emails.send({ from: RESEND_FROM, to: user.email, subject, text });
       } catch (e) { logger.warn('resend error', e); }
     }
   }
