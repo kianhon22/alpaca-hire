@@ -1,11 +1,12 @@
 "use client"
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { db } from "@/lib/firebase"
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore"
 import { TrendingUp } from "lucide-react"
 import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, YAxis, Label, Pie, PieChart, Bar, BarChart } from "recharts"
 import { ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
+import ResetFiltersButton from "@/components/ui/reset-filter-button"
 
 /* ---------------- helpers used for onboarding keys ---------------- */
 function slugify(s) {
@@ -63,11 +64,22 @@ function DashboardPage() {
 
   const [departments, setDepartments] = useState([])
   const [years, setYears] = useState([])
-  const [filters, setFilters] = useState({
+  // const [filters, setFilters] = useState({
+  //   department: "all",
+  //   year: "all",
+  //   month: "all",
+  // })
+
+  const initialFiltersRef = useRef({
     department: "all",
     year: "all",
     month: "all",
   })
+  const [filters, setFilters] = useState(initialFiltersRef.current)
+
+  const handleResetFilters = () => {
+    setFilters(initialFiltersRef.current)
+  }
 
   const months = [
     "January", "February", "March", "April", "May", "June",
@@ -415,7 +427,7 @@ function DashboardPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-4">
+      <div className="flex gap-4 items-center">
         {/* Department Filter */}
         <select
           className="border rounded p-2"
@@ -453,6 +465,14 @@ function DashboardPage() {
             <option key={mo} value={mo}>{mo}</option>
           ))}
         </select>
+        <ResetFiltersButton
+          onReset={handleResetFilters}
+          currentFilters={filters}
+          initialFilters={initialFiltersRef.current}
+          iconOnly      
+          color="black"
+          title="Reset filters"
+        />
       </div>
 
       {/* Data Card */}
