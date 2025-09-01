@@ -44,12 +44,24 @@ function ApplicantDashboard() {
                 const jobRef = doc(db, "jobs", appData.jobId)
                 const jobSnap = await getDoc(jobRef)
 
+                // fetch interview details (if exists) from interviews collection
+                let interviewData = null
+                const ivQ = query(
+                    collection(db, "interviews"),
+                    where("applicationId", "==", docSnap.id) // match applicationId
+                )
+                const ivSnap = await getDocs(ivQ)
+                if (!ivSnap.empty) {
+                    interviewData = ivSnap.docs[0].data()
+                }
+
                 if (jobSnap.exists()) {
-                apps.push({
+                    apps.push({
                     id: docSnap.id,
                     ...appData,
-                    job: { id: jobSnap.id, ...jobSnap.data() }
-                })
+                    job: { id: jobSnap.id, ...jobSnap.data() },
+                    interview: interviewData // attach interview info
+                    })
                 }
             }
 
@@ -260,8 +272,20 @@ function ApplicantDashboard() {
                             <DialogTitle>Interview Schedule</DialogTitle>
                             <DialogDescription>
                                 {/* Display interview details here */}
-                                Scheduled on: {app.interviewDate || "TBD"} <br/>
-                                Mode: {app.interviewMode || "TBD"}
+                                Link: {app.interview?.inviteUrl ? (
+                                    <a 
+                                        href={app.interview.inviteUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="text-blue-500 underline"
+                                    >
+                                        {app.interview.inviteUrl}
+                                    </a>
+                                    ) : (
+                                    "TBD"
+                                    )} <br/>
+                                    <em>* Please refer to Microsoft Teams or your email for further details *</em>
+                                    
                             </DialogDescription>
                         </DialogHeader>
                         <Button onClick={() => setOpenDialogAppId(null)}>Close</Button>

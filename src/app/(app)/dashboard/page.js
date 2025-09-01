@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { db } from "@/lib/firebase"
 import { collection, getDocs, query, where, orderBy } from "firebase/firestore"
 import { TrendingUp } from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, YAxis, Label, Pie, PieChart } from "recharts"
+import { Area, AreaChart, CartesianGrid, XAxis, Tooltip, YAxis, Label, Pie, PieChart, Bar, BarChart } from "recharts"
 import { ChartConfig, ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 
 /* ---------------- helpers used for onboarding keys ---------------- */
@@ -81,6 +81,9 @@ function DashboardPage() {
   const [totalApplications, setTotalApplications] = useState(0)
   const [statusTrendPercentage, setStatusTrendPercentage] = useState(0)
 
+  const [statusBarChartData, setStatusBarChartData] = useState([])
+  const [statusBarTrendPercentage, setStatusBarTrendPercentage] = useState(0)
+
   const chartConfig = {
     total: {
       label: "Applications",
@@ -102,6 +105,17 @@ function DashboardPage() {
       label: "Recruited",
       color: "#A2D2FF"
     }
+  }
+
+  const statusBarConfig = {
+    inProgress: {
+      label: "In Progress",
+      color: "#2B99FF",
+    },
+    completed: {
+      label: "Accepted/Rejected",
+      color: "#FFAFCC",
+    },
   }
 
   // Fetch departments & years for dropdowns
@@ -229,6 +243,53 @@ function DashboardPage() {
         } else {
           setTrendPercentage(0)
         }
+
+        // Generate status bar chart data (In Progress vs Accepted/Rejected)
+        const statusByMonth = filteredApps.reduce((acc, doc) => {
+          const createdAt = doc.data().createdAt?.toDate()
+          const status = doc.data().status || 'pending'
+          
+          if (createdAt) {
+            const month = months[createdAt.getMonth()]
+            const year = createdAt.getFullYear()
+            const key = `${month} ${year}`
+            
+            if (!acc[key]) {
+              acc[key] = { inProgress: 0, completed: 0 }
+            }
+            
+            if (status === 'accepted' || status === 'rejected') {
+              acc[key].completed += 1
+            } else {
+              acc[key].inProgress += 1
+            }
+          }
+          return acc
+        }, {})
+
+        const sortedStatusBarData = Object.keys(statusByMonth).sort((a,b) => {
+          const [aMonth, aYear] = a.split(" ")
+          const [bMonth, bYear] = b.split(" ")
+          return new Date(aYear, months.indexOf(aMonth)) - new Date(bYear, months.indexOf(bMonth))
+        }).map(key => ({
+          month: key.split(" ")[0].slice(0, 3),
+          inProgress: statusByMonth[key].inProgress,
+          completed: statusByMonth[key].completed
+        }))
+
+        setStatusBarChartData(sortedStatusBarData)
+
+        // Calculate status bar trend percentage
+        if (sortedStatusBarData.length >= 2) {
+          const lastMonth = sortedStatusBarData[sortedStatusBarData.length - 1]
+          const secondLastMonth = sortedStatusBarData[sortedStatusBarData.length - 2]
+          const lastTotal = lastMonth.inProgress + lastMonth.completed
+          const secondLastTotal = secondLastMonth.inProgress + secondLastMonth.completed
+          const trend = secondLastTotal > 0 ? ((lastTotal - secondLastTotal) / secondLastTotal) * 100 : 0
+          setStatusBarTrendPercentage(trend)
+        } else {
+          setStatusBarTrendPercentage(0)
+        }
         
         // Generate applications status chart data
         const statusCounts = filteredApps.reduce((acc, doc) => {
@@ -253,7 +314,7 @@ function DashboardPage() {
         const prevTotal = prevAppsSnap.docs.length - currentTotal > 0 ? prevAppsSnap.docs.length - currentTotal : 1
         const trend = ((currentTotal - prevTotal) / prevTotal) * 100
         setStatusTrendPercentage(trend)
-        
+
 
         // --- Onboarding ---
         let onboardingProgress = 0
@@ -450,70 +511,70 @@ function DashboardPage() {
       <div className="flex flex-col md:flex-row gap-5 mt-5">
         {/* Applications Trend Chart */}
         <Card className="flex-1">
-        <CardHeader>
-          <CardTitle>Application Trend Over Time</CardTitle>
-          <CardDescription>
-            Monthly summary of job applications received
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ChartContainer config={chartConfig}>
-            <AreaChart
-              accessibilityLayer
-              data={applicationsChartData}
-              margin={{
-                left: 12,
-                right: 12,
-              }}
-            >
-              <CartesianGrid vertical={false} />
-              <XAxis
-                dataKey="month"
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tickMargin={8}
-                tickFormatter={(value) => value.toString()}
-              />
-              <ChartTooltip
-                cursor={false}
-                content={<ChartTooltipContent indicator="line" />}
-              />
-              <Area
-                dataKey="total"
-                type="natural"
-                fill="#2B99FF"
-                fillOpacity={0.4}
-                stroke="#2B99FF"
-              />
-              <ChartLegend content={<ChartLegendContent />} />
-            </AreaChart>
-          </ChartContainer>
-        </CardContent>
-        <CardFooter>
-          <div className="flex w-full items-start gap-2 text-sm">
-            <div className="grid gap-2">
-              <div className="flex items-center gap-2 leading-none font-medium">
-                {trendPercentage >= 0 ? 
-                  <span className="text-green-500">Applications are trending up by {trendPercentage.toFixed(2)}%</span> :
-                  <span className="text-red-500">Applications are trending down by {Math.abs(trendPercentage).toFixed(2)}%</span>
-                }
-                <TrendingUp className="h-4 w-4" />
+          <CardHeader>
+            <CardTitle>Job Applications Trend</CardTitle>
+            <CardDescription>
+              Monthly overview of the total job applications submitted over time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={chartConfig}>
+              <AreaChart
+                accessibilityLayer
+                data={applicationsChartData}
+                margin={{
+                  left: 12,
+                  right: 12,
+                }}
+              >
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={(value) => value.toString()}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator="line" />}
+                />
+                <Area
+                  dataKey="total"
+                  type="natural"
+                  fill="#2B99FF"
+                  fillOpacity={0.4}
+                  stroke="#2B99FF"
+                />
+                <ChartLegend content={<ChartLegendContent />} />
+              </AreaChart>
+            </ChartContainer>
+          </CardContent>
+          <CardFooter>
+            <div className="flex w-full items-start gap-2 text-sm">
+              <div className="grid gap-2">
+                <div className="flex items-center gap-2 leading-none font-medium">
+                  {trendPercentage >= 0 ? 
+                    <span className="text-green-500">Applications are trending up by {trendPercentage.toFixed(2)}%</span> :
+                    <span className="text-red-500">Applications are trending down by {Math.abs(trendPercentage).toFixed(2)}%</span>
+                  }
+                  <TrendingUp className="h-4 w-4" />
+                </div>
               </div>
             </div>
-          </div>
-        </CardFooter>
-      </Card>
+          </CardFooter>
+        </Card>
       
-      {/* Application Status Chart */}
-      <Card className="flex flex-1 flex-col">
+        {/* Application Status Chart */}
+        <Card className="flex flex-1 flex-col">
           <CardHeader className="items-center pb-0">
             <CardTitle>Application Status Distribution</CardTitle>
-            <CardDescription>Current status breakdown of all applications</CardDescription>
+            <CardDescription>Proportional breakdown of applications across different status categories.</CardDescription>
           </CardHeader>
           <CardContent className="flex-1 pb-0">
             <ChartContainer
@@ -565,6 +626,38 @@ function DashboardPage() {
               </PieChart>
             </ChartContainer>
           </CardContent>
+        </Card>
+
+        {/* Application Status Bar Chart */}
+        <Card className="flex flex-1 flex-col">
+          <CardHeader>
+            <CardTitle>Application Outcomes Over Time</CardTitle>
+            <CardDescription>
+              Monthly comparison of applications that are still in progress vs those with completed outcomes.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ChartContainer config={statusBarConfig}>
+              <BarChart accessibilityLayer data={statusBarChartData}>
+                <CartesianGrid vertical={false} />
+                <XAxis
+                  dataKey="month"
+                  tickLine={false}
+                  tickMargin={10}
+                  axisLine={false}
+                  tickFormatter={(value) => value.slice(0, 3)}
+                />
+                <ChartTooltip
+                  cursor={false}
+                  content={<ChartTooltipContent indicator="dashed" />}
+                />
+                <Bar dataKey="inProgress" fill="var(--color-inProgress)" radius={4} />
+                <Bar dataKey="completed" fill="var(--color-completed)" radius={4} />
+              </BarChart>
+            </ChartContainer>
+          </CardContent>
+          <CardFooter className="flex-col items-start gap-2 text-sm">
+          </CardFooter>
         </Card>
       </div>
       
