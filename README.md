@@ -1,4 +1,6 @@
-# <img src="public/alpaca-hire-logo-readme.png" alt="AlpacaHire Logo" height="50px"/> AlpacaHire – Talent Acquisition & Onboarding Platform
+<div align="center"><img src="public/alpaca-hire-logo-readme.png" alt="AlpacaHire Logo" height="70px"/></div> 
+
+# AlpacaHire – Talent Acquisition & Onboarding Platform
 
 A modern web app for recruiters, hiring managers, and applicants to manage recruitment pipelines, applications, and onboarding with various functionalities to simplify resume screening, automates onboarding steps, and equips new hires to be productive.
 
