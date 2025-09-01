@@ -1,36 +1,128 @@
-AlpacaHire is a tool for seamless talent acquisition and onboarding for new hires.
+# AlpacaHire – Talent Acquisition & Onboarding Platform
 
-## Getting Started
+A modern web app for recruiters, hiring managers, and applicants to manage recruitment pipelines, applications, and onboarding with various functionalities to simplify resume screening, automates onboarding steps, and equips new hires to be productive.
 
-First, run the development server:
+
+## Team Members
+
+- Tan Kian Hon (Full-Stack Developer)
+- Yeoh Huey Jing (Full-Stack Developer)
+- Teng Eileen (AI Engineer)
+- Ooi Pei Yin (Business Analyst)
+
+
+## Problem Statement
+
+- Lack of exclusive hiring platform, often juggle multiple tools to track recruitment
+- Inefficient Resume Screening & Candidate Matching 
+- Low Productivity of New Hires
+
+
+## Solution Overview
+
+- Recruiter dashboard with filterable KPIs
+- AI-driven candidate screening to extract keywords from resume
+- Talent management hub to rank applicants with the matching score
+- Strealined onboarding process for new hires
+- Automated notifications and email
+
+## Technology Stack
+
+- Frontend
+  - ReactJs
+  - NextJs
+  - Tailwind CSS
+- Backend
+  - Firebase Cloud Functions
+  - Firebase Authentication
+  - Resend (email provided)
+  - SkillNER (extract key words)
+  - PDFPlumber (extract text)
+- Database
+  - Firebase Firestore
+
+
+## Setup Instructions
+
+### 1) Prerequisites
+
+- Node.js
+- Firebase project (Firestore, Storage, Functions enabled)
+- Python
+- Resend account + API key
+
+### 2) Install dependencies
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3) Configure environment (Web App)
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Run this command and insert your own credentials:
+```bash
+cp .env.example .env
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 4) Firebase Cloud Functions
 
-## Learn More
+Install functions dependencies:
+```bash
+cd functions
+npm install
+```
 
-To learn more about Next.js, take a look at the following resources:
+Run this command and insert your own credentials:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+cp .env.example .env
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Deploy Functions:
+```bash
+firebase deploy --only functions
+```
 
-## Deploy on Vercel
+### 5) Run the web app
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+cd ..
+npm run dev
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### 6) Python backend
+
+Install Python dependencies:
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+Create `.env.local` and insert your credential:
+
+```
+GOOGLE_APPLICATION_CREDENTIALS=XXX-firebase-adminsdk-XXX.json
+```
+
+Download the Firebase AdminSDK json file from firebase and insert in the root of /backend.
+
+Run the Python backend server:
+
+```bash
+uvicorn backend.main:app --reload --port 8000
+```
+
+**Note: Refer to the terminal prompt to install any dependencies if unable to run.
+
+## Operational Notes
+
+- Email sending is server-side via Firebase Cloud Functions with Resend email provider.
+- Application status changes are detected by a Firestore trigger, emails and notifications are created and sent automatically to the applicant.
+- Cloud function is scheduled to run every 30 minutes to check new applications and send notifications to notify HR and manager to review them.
+
+
+## Reflection: Challenges & Learnings
+
+- Learned how to extract text from PDF
+- Difficult to

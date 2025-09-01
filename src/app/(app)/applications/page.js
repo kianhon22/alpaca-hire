@@ -160,19 +160,26 @@ export default function ApplicationsPage() {
   const renderActions = (a) => {
     const s = (a.status || "pending").toLowerCase();
     const actions = [];
-    if (s === "pending" || s === "reviewing") {
+    if (s === "pending") {
+      actions.push(
+        <Button key="accept" size="sm" className="bg-green-500" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "reviewing"); }}>Accept</Button>
+      );
+      actions.push(
+        <Button key="reject" size="sm" variant="destructive" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "rejected"); }}>Reject</Button>
+      );
+    } else if (s === "reviewing") {
       actions.push(
         <Button key="schedule" size="sm" className="bg-[#2b99ff]" onClick={(e)=>{ e.stopPropagation(); setSchedule({ open: true, app: a, date: "", time: "" }); }}>Schedule</Button>
       );
       actions.push(
-        <Button key="reject" size="sm" variant="outline" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "rejected"); }}>Reject</Button>
+        <Button key="reject" size="sm" variant="destructive" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "rejected"); }}>Reject</Button>
       );
     } else if (s === "scheduled") {
       actions.push(
         <Button key="reschedule" size="sm" className="bg-[#2b99ff]" onClick={(e)=>{ e.stopPropagation(); setSchedule({ open: true, app: a, date: "", time: "" }); }}>Reschedule</Button>
       );
       actions.push(
-        <Button key="cancel" size="sm" variant="outline" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "reviewing"); }}>Cancel</Button>
+        <Button key="set-pending" size="sm" variant="outline" className="bg-gray-100" onClick={(e)=>{ e.stopPropagation(); updateStatus(a.id, "pending"); }}>Set Pending</Button>
       );
     } else if (s === "hired") {
       actions.push(<span key="hired" className="text-xs text-green-600">Hired</span>);
@@ -270,7 +277,7 @@ export default function ApplicationsPage() {
           <SelectTrigger className="w-[220px]">
             <div className="flex items-center gap-2 truncate">
               <ArrowDownWideNarrow className="h-4 w-4 text-gray-500" />
-              <span className="truncate">Sort: {matchOrderLabel}</span>
+              <span className="truncate">{matchOrderLabel}</span>
             </div>
           </SelectTrigger>
           <SelectContent>
@@ -313,7 +320,7 @@ export default function ApplicationsPage() {
               const createdAt = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
               const status = (a.status || "pending").toLowerCase();
               const statusClass =
-               status === "accepted" ? "bg-green-100 text-green-700" :
+               status === "accepted" ? "bg-green-200 text-green-700" :
                 status === "scheduled" ? "bg-blue-100 text-blue-700" :
                 status === "reviewing" ? "bg-yellow-100 text-yellow-800" :
                 status === "rejected" ? "bg-red-100 text-red-700" :
